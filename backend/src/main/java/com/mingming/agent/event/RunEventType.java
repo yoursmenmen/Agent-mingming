@@ -1,4 +1,4 @@
-package com.mingming.agent.core;
+package com.mingming.agent.event;
 
 public enum RunEventType {
     MODEL_DELTA,

@@ -1,6 +1,9 @@
 services:
   postgres:
-    image: postgres:16
+    build:
+      context: .
+      dockerfile: Dockerfile.pgvector
+    container_name: agent-postgres
     environment:
       POSTGRES_DB: agentdb
       POSTGRES_USER: agent
@@ -9,6 +12,7 @@ services:
       - "5432:5432"
     volumes:
       - agent_pg_data:/var/lib/postgresql/data
-
+      - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
 volumes:
   agent_pg_data:
+# docker compose up -d --build

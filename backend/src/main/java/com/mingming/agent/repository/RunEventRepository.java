@@ -1,5 +1,6 @@
-package com.mingming.agent.store;
+package com.mingming.agent.repository;
 
+import com.mingming.agent.entity.RunEventEntity;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;

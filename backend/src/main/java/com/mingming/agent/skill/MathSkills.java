@@ -1,4 +1,4 @@
-package com.mingming.agent.skills;
+package com.mingming.agent.skill;
 
 import java.util.Map;
 import org.springframework.ai.tool.annotation.Tool;

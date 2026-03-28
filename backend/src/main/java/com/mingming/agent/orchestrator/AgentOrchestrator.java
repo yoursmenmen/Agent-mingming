@@ -1,42 +1,31 @@
-package com.mingming.agent.core;
+package com.mingming.agent.orchestrator;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.mingming.agent.store.AgentRunEntity;
-import com.mingming.agent.store.AgentRunRepository;
-import com.mingming.agent.store.ChatSessionEntity;
-import com.mingming.agent.store.ChatSessionRepository;
-import com.mingming.agent.store.RunEventEntity;
-import com.mingming.agent.store.RunEventRepository;
+import com.mingming.agent.entity.AgentRunEntity;
+import com.mingming.agent.entity.ChatSessionEntity;
+import com.mingming.agent.entity.RunEventEntity;
+import com.mingming.agent.event.RunEventType;
+import com.mingming.agent.repository.AgentRunRepository;
+import com.mingming.agent.repository.ChatSessionRepository;
+import com.mingming.agent.repository.RunEventRepository;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class AgentOrchestrator {
 
-    private final ChatClient chatClient;
+    private final ChatClient.Builder chatClientBuilder;
     private final ObjectMapper objectMapper;
     private final ChatSessionRepository chatSessionRepository;
     private final AgentRunRepository agentRunRepository;
     private final RunEventRepository runEventRepository;
-
-    public AgentOrchestrator(
-            ChatClient.Builder chatClientBuilder,
-            ObjectMapper objectMapper,
-            ChatSessionRepository chatSessionRepository,
-            AgentRunRepository agentRunRepository,
-            RunEventRepository runEventRepository
-    ) {
-        this.chatClient = chatClientBuilder.build();
-        this.objectMapper = objectMapper;
-        this.chatSessionRepository = chatSessionRepository;
-        this.agentRunRepository = agentRunRepository;
-        this.runEventRepository = runEventRepository;
-    }
 
     public record RunInit(UUID sessionId, UUID runId) {}
 
@@ -84,7 +73,7 @@ public class AgentOrchestrator {
     public void runOnce(UUID runId, String userText, java.util.function.Consumer<String> sseDataConsumer) {
         AtomicInteger seq = new AtomicInteger(1);
 
-        String content = chatClient.prompt()
+        String content = chatClientBuilder.build().prompt()
                 .messages(new UserMessage(userText))
                 .call()
                 .content();

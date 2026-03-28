@@ -1,4 +1,4 @@
-package com.mingming.agent.api;
+package com.mingming.agent.controller;
 
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;

@@ -1,4 +1,4 @@
-package com.mingming.agent.core;
+package com.mingming.agent.event;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.OffsetDateTime;

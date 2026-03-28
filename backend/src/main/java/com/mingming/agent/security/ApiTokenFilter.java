@@ -5,18 +5,16 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
+@RequiredArgsConstructor
 public class ApiTokenFilter extends OncePerRequestFilter {
 
     private final SecurityProperties securityProperties;
-
-    public ApiTokenFilter(SecurityProperties securityProperties) {
-        this.securityProperties = securityProperties;
-    }
 
     @Override
     protected void doFilterInternal(

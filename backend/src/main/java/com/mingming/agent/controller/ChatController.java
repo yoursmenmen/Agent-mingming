@@ -1,10 +1,11 @@
-package com.mingming.agent.api;
+package com.mingming.agent.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.mingming.agent.core.AgentOrchestrator;
+import com.mingming.agent.orchestrator.AgentOrchestrator;
 import java.io.IOException;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -12,15 +13,11 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
+@RequiredArgsConstructor
 public class ChatController {
 
     private final AgentOrchestrator orchestrator;
     private final ObjectMapper objectMapper;
-
-    public ChatController(AgentOrchestrator orchestrator, ObjectMapper objectMapper) {
-        this.orchestrator = orchestrator;
-        this.objectMapper = objectMapper;
-    }
 
     public record ChatRequest(String message) {}
 

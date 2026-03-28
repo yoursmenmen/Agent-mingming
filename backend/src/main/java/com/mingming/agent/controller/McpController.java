@@ -1,18 +1,16 @@
-package com.mingming.agent.api;
+package com.mingming.agent.controller;
 
 import com.mingming.agent.mcp.McpServerRegistry;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@RequiredArgsConstructor
 public class McpController {
 
     private final McpServerRegistry registry;
-
-    public McpController(McpServerRegistry registry) {
-        this.registry = registry;
-    }
 
     @GetMapping("/api/mcp/servers")
     public Object listServers() {
