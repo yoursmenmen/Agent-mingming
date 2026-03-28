@@ -3,5 +3,6 @@
 .idea/
 .vscode/
 .env
+/backend/src/main/resources/application-local.yml
 /docker/postgres/data/*
 !/docker/postgres/data/.gitkeep

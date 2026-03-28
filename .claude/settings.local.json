@@ -21,7 +21,26 @@
       "Bash(mvn -version)",
       "Bash(export JAVA_HOME=\"C:/Env/Java/Java21\")",
       "Bash(printf \"BUILD_OK\")",
-      "Bash(bash ./mvnw-java21.sh -version)"
+      "Bash(bash ./mvnw-java21.sh -version)",
+      "Read(//mnt/c/DevApp/MyResp/MyJavaProject/Agent_mm/.claude/worktrees/**)",
+      "Read(//mnt/c/DevApp/MyResp/MyJavaProject/Agent_mm/.claude/worktrees/agent-a37e0623/**)",
+      "Bash(npm run:*)",
+      "Bash(where nvm:*)",
+      "Bash(nvm version:*)",
+      "Bash(nvm list:*)",
+      "Bash(dir:*)",
+      "Bash(\"C:/Env/nvm/nvm.exe\" list:*)",
+      "Bash(\"C:/Env/nvm/nvm.exe\" use:*)",
+      "Bash(npm ls:*)",
+      "Bash(mvn dependency:tree -Dincludes=org.flywaydb:flyway-core -DskipTests)",
+      "Bash(mvn dependency:tree -Dincludes=org.flywaydb:flyway-database-postgresql -DskipTests)",
+      "Bash(mvn -q spring-boot:run)",
+      "Bash(jar tf:*)",
+      "Bash(python:*)",
+      "Bash(mvn -q dependency:build-classpath -Dmdep.outputFile=target/classpath.txt)",
+      "Bash(mvn dependency:build-classpath -Dmdep.outputFile=target/classpath.txt)",
+      "Bash(curl:*)",
+      "Bash(mvn -q spring-boot:run -Dspring-boot.run.arguments=\"--server.port=18081\")"
     ]
   }
 }

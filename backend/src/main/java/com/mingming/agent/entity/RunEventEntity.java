@@ -9,6 +9,7 @@ import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.ColumnTransformer;
 
 @Getter
 @Setter
@@ -33,5 +34,6 @@ public class RunEventEntity {
     private String type;
 
     @Column(name = "payload", nullable = false, columnDefinition = "jsonb")
+    @ColumnTransformer(write = "?::jsonb")
     private String payload;
 }

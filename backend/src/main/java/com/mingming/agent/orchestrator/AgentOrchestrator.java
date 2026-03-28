@@ -15,13 +15,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 public class AgentOrchestrator {
 
-    private final ChatClient.Builder chatClientBuilder;
+    private final ObjectProvider<ChatModel> chatModelProvider;
     private final ObjectMapper objectMapper;
     private final ChatSessionRepository chatSessionRepository;
     private final AgentRunRepository agentRunRepository;
@@ -73,10 +75,15 @@ public class AgentOrchestrator {
     public void runOnce(UUID runId, String userText, java.util.function.Consumer<String> sseDataConsumer) {
         AtomicInteger seq = new AtomicInteger(1);
 
-        String content = chatClientBuilder.build().prompt()
-                .messages(new UserMessage(userText))
-                .call()
-                .content();
+        ChatModel chatModel = chatModelProvider.getIfAvailable();
+        String content = chatModel == null
+                ? "当前未配置 DashScope 模型，已切换到本地回退响应。你可以先继续联调前后端链路，配置好 AI_DASHSCOPE_API_KEY 后再接入真实大模型输出。"
+                : ChatClient.builder(chatModel)
+                        .build()
+                        .prompt()
+                        .messages(new UserMessage(userText))
+                        .call()
+                        .content();
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("content", content);
