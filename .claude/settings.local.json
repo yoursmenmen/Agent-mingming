@@ -15,7 +15,13 @@
       "Bash(mvn -DskipTests package)",
       "Bash(npm -v)",
       "Bash(npm create:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(mvn -q -DskipTests compile)",
+      "Bash(mvn -q -version)",
+      "Bash(mvn -version)",
+      "Bash(export JAVA_HOME=\"C:/Env/Java/Java21\")",
+      "Bash(printf \"BUILD_OK\")",
+      "Bash(bash ./mvnw-java21.sh -version)"
     ]
   }
 }
