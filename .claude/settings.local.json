@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init:*)",
+      "Bash(printf \"%s\\\\n\" \"/backend/target/\" \"/frontend/node_modules/\" \".idea/\" \".vscode/\" \".env\")",
+      "Read(//c/Env/Java/Java21/**)",
+      "Bash(export JAVA_HOME=\"/c/Env/Java/Java21\")",
+      "Bash(export PATH=\"$JAVA_HOME/bin:$PATH\")",
+      "Bash(java -version)",
+      "Bash(mvn -v)",
+      "WebSearch",
+      "Bash(mvn -q -DskipTests package)",
+      "Bash(mvn -q dependency:get -Dartifact=com.alibaba.cloud.ai:spring-ai-alibaba-starter-dashscope:1.1.2.2)",
+      "Bash(mvn -q -U -DskipTests package)",
+      "Bash(mvn -DskipTests package)",
+      "Bash(npm -v)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)"
+    ]
+  }
+}

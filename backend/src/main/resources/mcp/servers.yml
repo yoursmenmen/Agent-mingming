@@ -1,0 +1,11 @@
+# MCP servers configuration (MVP placeholder)
+#
+# Example:
+# servers:
+#   - name: demo
+#     transport: http
+#     url: http://localhost:9000
+#     streaming: sse
+#     enabled: true
+#     timeoutMs: 10000
+servers: []

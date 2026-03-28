@@ -1,0 +1,33 @@
+server:
+  port: 18080
+
+spring:
+  application:
+    name: agent-backend
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/agentdb}
+    username: ${DB_USER:agent}
+    password: ${DB_PASSWORD:agent}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+
+  flyway:
+    enabled: true
+
+  ai:
+    dashscope:
+      api-key: ${AI_DASHSCOPE_API_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+agent:
+  security:
+    apiToken: ${AGENT_API_TOKEN:dev-token-change-me}
