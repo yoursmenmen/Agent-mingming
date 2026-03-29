@@ -18,3 +18,9 @@ export interface TimelineItem {
 }
 
 export type RunStatus = 'idle' | 'streaming' | 'done' | 'error'
+
+export interface ToolInfo {
+  name: string
+  description: string
+  source: string
+}

@@ -1,9 +1,9 @@
-import { computed, ref } from 'vue'
-import { fetchRunEvents, fetchSessionEvents, postChatStream } from '../services/api'
+import { computed, onMounted, ref } from 'vue'
+import { fetchRunEvents, fetchSessionEvents, fetchTools, postChatStream } from '../services/api'
 import { createStreamTimelineItem, mapRunEventToTimelineItem, mergeTimelineItems } from '../services/eventMapper'
 import { consumeSseStream } from '../services/sse'
 import type { ChatMessage, StreamErrorEvent, StreamMessageEvent, StreamRunEvent } from '../types/chat'
-import type { RunStatus, TimelineItem } from '../types/run'
+import type { RunStatus, TimelineItem, ToolInfo } from '../types/run'
 
 function createId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`
@@ -26,6 +26,7 @@ export function useChatConsole() {
   const streamItems = ref<TimelineItem[]>([])
   const historyItems = ref<TimelineItem[]>([])
   const errorMessage = ref('')
+  const availableTools = ref<ToolInfo[]>([])
   const isRefreshing = ref(false)
   const activeAssistantId = ref<string | null>(null)
   const streamSeq = ref(1)
@@ -182,6 +183,18 @@ export function useChatConsole() {
     }
   }
 
+  async function refreshTools() {
+    try {
+      availableTools.value = await fetchTools()
+    } catch {
+      availableTools.value = []
+    }
+  }
+
+  onMounted(() => {
+    void refreshTools()
+  })
+
   function formatTime(value: string): string {
     return new Date(value).toLocaleTimeString('zh-CN', {
       hour: '2-digit',
@@ -198,11 +211,13 @@ export function useChatConsole() {
     runStatus,
     timelineItems,
     timelineCount,
+    availableTools,
     statusLabel,
     errorMessage,
     isRefreshing,
     sendMessage,
     refreshRunEvents,
+    refreshTools,
     formatTime,
   }
 }

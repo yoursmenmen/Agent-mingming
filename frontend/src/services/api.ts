@@ -1,5 +1,5 @@
 import type { ChatRequest } from '../types/chat'
-import type { RunEventItem } from '../types/run'
+import type { RunEventItem, ToolInfo } from '../types/run'
 
 const DEV_TOKEN = 'dev-token-change-me'
 
@@ -40,6 +40,21 @@ export async function fetchSessionEvents(sessionId: string): Promise<RunEventIte
   }
 
   return response.json() as Promise<RunEventItem[]>
+}
+
+export async function fetchTools(): Promise<ToolInfo[]> {
+  const response = await fetch('/api/tools', {
+    headers: {
+      Authorization: `Bearer ${DEV_TOKEN}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`获取工具列表失败：${response.status}`)
+  }
+
+  const data = (await response.json()) as { tools?: ToolInfo[] }
+  return data.tools ?? []
 }
 
 export { DEV_TOKEN }

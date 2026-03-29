@@ -4,6 +4,7 @@ import ChatPanel from './components/ChatPanel.vue'
 import HeroHeader from './components/HeroHeader.vue'
 import RunStatusPanel from './components/RunStatusPanel.vue'
 import TimelinePanel from './components/TimelinePanel.vue'
+import ToolsPanel from './components/ToolsPanel.vue'
 import { useChatConsole } from './composables/useChatConsole'
 import { DEV_TOKEN } from './services/api'
 
@@ -15,6 +16,7 @@ const {
   runStatus,
   timelineItems,
   timelineCount,
+  availableTools,
   statusLabel,
   errorMessage,
   isRefreshing,
@@ -24,15 +26,23 @@ const {
 } = useChatConsole()
 
 const isSidebarOpen = ref(false)
-const expandedSidebarPanel = ref<'status' | 'timeline'>('status')
+const expandedSidebarPanel = ref<'status' | 'timeline' | 'tools'>('status')
 
-const sidebarTitle = computed(() => (expandedSidebarPanel.value === 'status' ? '运行状态' : '事件时间线'))
+const sidebarTitle = computed(() => {
+  if (expandedSidebarPanel.value === 'status') {
+    return '运行状态'
+  }
+  if (expandedSidebarPanel.value === 'timeline') {
+    return '事件时间线'
+  }
+  return '可用工具'
+})
 
 function toggleSidebar() {
   isSidebarOpen.value = !isSidebarOpen.value
 }
 
-function openSidebarPanel(panel: 'status' | 'timeline') {
+function openSidebarPanel(panel: 'status' | 'timeline' | 'tools') {
   expandedSidebarPanel.value = panel
   isSidebarOpen.value = true
 }
@@ -87,6 +97,17 @@ function openSidebarPanel(panel: 'status' | 'timeline') {
             <span class="sidebar-icon">≋</span>
             <span class="sidebar-text">时间线</span>
           </button>
+          <button
+            class="sidebar-tab"
+            type="button"
+            role="tab"
+            :aria-selected="isSidebarOpen && expandedSidebarPanel === 'tools'"
+            :class="{ 'sidebar-tab--active': isSidebarOpen && expandedSidebarPanel === 'tools' }"
+            @click="openSidebarPanel('tools')"
+          >
+            <span class="sidebar-icon">⚒</span>
+            <span class="sidebar-text">工具</span>
+          </button>
         </div>
 
         <div v-if="isSidebarOpen" class="sidebar-content">
@@ -112,6 +133,10 @@ function openSidebarPanel(panel: 'status' | 'timeline') {
             :run-id="runId"
             :timeline-items="timelineItems"
             :format-time="formatTime"
+          />
+          <ToolsPanel
+            v-show="expandedSidebarPanel === 'tools'"
+            :tools="availableTools"
           />
         </div>
       </aside>

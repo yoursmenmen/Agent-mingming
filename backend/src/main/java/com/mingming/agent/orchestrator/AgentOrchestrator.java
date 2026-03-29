@@ -9,6 +9,8 @@ import com.mingming.agent.event.RunEventType;
 import com.mingming.agent.repository.AgentRunRepository;
 import com.mingming.agent.repository.ChatSessionRepository;
 import com.mingming.agent.repository.RunEventRepository;
+import com.mingming.agent.tool.LocalToolProvider;
+import com.mingming.agent.tool.ToolRunContextHolder;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,6 +38,8 @@ public class AgentOrchestrator {
     private final ChatSessionRepository chatSessionRepository;
     private final AgentRunRepository agentRunRepository;
     private final RunEventRepository runEventRepository;
+    private final List<LocalToolProvider> localToolProviders;
+    private final ToolRunContextHolder toolRunContextHolder;
 
     public record RunInit(UUID sessionId, UUID runId) {}
 
@@ -96,12 +100,7 @@ public class AgentOrchestrator {
         ChatModel chatModel = chatModelProvider.getIfAvailable();
         String content = chatModel == null
                 ? "当前未配置 DashScope 模型，已切换到本地回退响应。你可以先继续联调前后端链路，配置好 AI_DASHSCOPE_API_KEY 后再接入真实大模型输出。"
-                : ChatClient.builder(chatModel)
-                        .build()
-                        .prompt()
-                        .messages(promptMessages.toArray(new Message[0]))
-                        .call()
-                        .content();
+                : callModelWithTools(chatModel, runId, seq, promptMessages);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("content", content);
@@ -173,6 +172,21 @@ public class AgentOrchestrator {
             return objectMapper.readTree(payloadJson).path("content").asText("");
         } catch (Exception ignored) {
             return "";
+        }
+    }
+
+    private String callModelWithTools(ChatModel chatModel, UUID runId, AtomicInteger seq, List<Message> promptMessages) {
+        toolRunContextHolder.start(runId, seq);
+        try {
+            return ChatClient.builder(chatModel)
+                    .build()
+                    .prompt()
+                    .messages(promptMessages.toArray(new Message[0]))
+                    .tools(localToolProviders.stream().map(LocalToolProvider::toolBean).toArray())
+                    .call()
+                    .content();
+        } finally {
+            toolRunContextHolder.clear();
         }
     }
 }

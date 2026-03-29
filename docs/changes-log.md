@@ -135,3 +135,34 @@ Flyway migrations：
   - 验证 controller 对 service 的委托
 - `RunEventQueryServiceTest`
   - 验证会话内跨 run 事件聚合与空会话处理
+
+## 7) 2026-03-29 迭代（本地 Tool Calling 闭环）
+
+### 后端：本地工具调用主链路
+- `AgentOrchestrator` 在模型调用时注册本地工具：`TimeSkills`、`MathSkills`。
+- 模型可在回答过程中触发 `now` / `add` 工具调用，而不是只走纯文本回答。
+- 新增 `LocalToolProvider` 基础接口与 `ToolMetadata`：
+  - 所有本地工具统一实现该接口
+  - Orchestrator 通过 IOC 自动注入 `List<LocalToolProvider>` 并统一注册到模型
+  - `ToolsController` 同样通过该列表自动返回工具目录（去掉硬编码）
+
+### 后端：工具事件落库
+- 新增 `ToolRunContextHolder`，在单次 run 内维护工具调用上下文（`runId + seq`）。
+- 新增 `ToolEventService`，在工具执行时写入：
+  - `TOOL_CALL`
+  - `TOOL_RESULT`
+- `TimeSkills`、`MathSkills` 已接入工具事件记录。
+
+结果：时间线可回放“调用了什么工具、输入参数、输出结果”。
+
+### 后端：工具清单接口
+- 新增 `GET /api/tools`，返回当前可用本地工具（`now`、`add`）。
+
+### 前端：展示可用工具
+- 新增工具列表请求与状态：启动时拉取 `/api/tools`。
+- 在 `RunStatusPanel` 展示“可用工具”清单，方便调试和学习。
+
+### 新增/更新测试
+- `ToolsControllerTest`：验证工具列表接口返回。
+- `ToolEventServiceTest`：验证 `TOOL_CALL` 事件落库。
+- 保持现有 orchestrator / session timeline 测试通过。

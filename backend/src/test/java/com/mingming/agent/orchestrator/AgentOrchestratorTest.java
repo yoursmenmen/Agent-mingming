@@ -13,6 +13,8 @@ import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.repository.AgentRunRepository;
 import com.mingming.agent.repository.ChatSessionRepository;
 import com.mingming.agent.repository.RunEventRepository;
+import com.mingming.agent.tool.LocalToolProvider;
+import com.mingming.agent.tool.ToolRunContextHolder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -41,6 +43,9 @@ class AgentOrchestratorTest {
     @Mock
     private RunEventRepository runEventRepository;
 
+    @Mock
+    private ToolRunContextHolder toolRunContextHolder;
+
     @Test
     void runOnce_shouldPersistUserAndModelEventsWithIncreasingSeq() throws Exception {
         when(chatModelProvider.getIfAvailable()).thenReturn(null);
@@ -50,7 +55,9 @@ class AgentOrchestratorTest {
                 new ObjectMapper(),
                 chatSessionRepository,
                 agentRunRepository,
-                runEventRepository);
+                runEventRepository,
+                List.<LocalToolProvider>of(),
+                toolRunContextHolder);
 
         UUID runId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
@@ -89,7 +96,9 @@ class AgentOrchestratorTest {
                 new ObjectMapper(),
                 chatSessionRepository,
                 agentRunRepository,
-                runEventRepository);
+                runEventRepository,
+                List.<LocalToolProvider>of(),
+                toolRunContextHolder);
 
         UUID previousRunId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
@@ -122,7 +131,9 @@ class AgentOrchestratorTest {
                 new ObjectMapper(),
                 chatSessionRepository,
                 agentRunRepository,
-                runEventRepository);
+                runEventRepository,
+                List.<LocalToolProvider>of(),
+                toolRunContextHolder);
 
         UUID sessionId = UUID.randomUUID();
 
@@ -151,7 +162,9 @@ class AgentOrchestratorTest {
                 new ObjectMapper(),
                 chatSessionRepository,
                 agentRunRepository,
-                runEventRepository);
+                runEventRepository,
+                List.<LocalToolProvider>of(),
+                toolRunContextHolder);
 
         UUID existingSessionId = UUID.randomUUID();
         AgentOrchestrator.RunInit runInit = orchestrator.startRun(existingSessionId, "dashscope", null, null, "system.txt");
@@ -170,7 +183,9 @@ class AgentOrchestratorTest {
                 new ObjectMapper(),
                 chatSessionRepository,
                 agentRunRepository,
-                runEventRepository);
+                runEventRepository,
+                List.<LocalToolProvider>of(),
+                toolRunContextHolder);
 
         UUID missingSessionId = UUID.randomUUID();
 
