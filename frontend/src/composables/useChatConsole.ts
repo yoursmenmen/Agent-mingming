@@ -82,6 +82,21 @@ export function useChatConsole() {
     target.status = status
   }
 
+  function appendAssistantDelta(delta: string) {
+    if (!activeAssistantId.value) {
+      return
+    }
+
+    const target = messages.value.find((item) => item.id === activeAssistantId.value)
+    if (!target) {
+      return
+    }
+
+    const current = target.content === '思考中…' ? '' : target.content
+    target.content = `${current}${delta}`
+    target.status = 'streaming'
+  }
+
   async function refreshRunEvents() {
     const hasSession = Boolean(sessionId.value)
     const hasRun = Boolean(runId.value && runId.value !== '等待新会话')
@@ -137,12 +152,12 @@ export function useChatConsole() {
 
         if (packet.event === 'event') {
           const payload = JSON.parse(packet.data) as StreamMessageEvent
-          updateAssistantMessage(payload.content, 'streaming')
+          appendAssistantDelta(payload.content)
           streamItems.value.push(
             createStreamTimelineItem({
               id: createId('timeline'),
               seq: streamSeq.value++,
-              type: 'MODEL_MESSAGE',
+              type: 'MODEL_DELTA',
               createdAt: now,
               payload: packet.data,
             }),

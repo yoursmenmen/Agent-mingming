@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -45,22 +46,22 @@ public class WeatherSkills implements LocalToolProvider {
     }
 
     @Tool(name = TOOL_NAME, description = "Get current weather by city name (e.g. 北京, 上海)")
-    public Map<String, Object> getWeather(String city) {
+    public Map<String, Object> getWeather(String city, ToolContext toolContext) {
         String normalizedCity = city == null ? "" : city.trim();
-        toolEventService.recordToolCall(TOOL_NAME, Map.of("city", normalizedCity));
+        toolEventService.recordToolCall(toolContext, TOOL_NAME, Map.of("city", normalizedCity));
 
         if (normalizedCity.isEmpty()) {
             Map<String, Object> result = Map.of(
                     "ok", false,
                     "error", "city is required");
-            toolEventService.recordToolResult(TOOL_NAME, result);
+            toolEventService.recordToolResult(toolContext, TOOL_NAME, result);
             return result;
         }
         if (amapApiKey == null || amapApiKey.isBlank()) {
             Map<String, Object> result = Map.of(
                     "ok", false,
                     "error", "AMAP_WEATHER_API_KEY is missing");
-            toolEventService.recordToolResult(TOOL_NAME, result);
+            toolEventService.recordToolResult(toolContext, TOOL_NAME, result);
             return result;
         }
 
@@ -82,7 +83,7 @@ public class WeatherSkills implements LocalToolProvider {
                         "ok", false,
                         "error", root.path("info").asText("weather query failed"),
                         "city", normalizedCity);
-                toolEventService.recordToolResult(TOOL_NAME, result);
+                toolEventService.recordToolResult(toolContext, TOOL_NAME, result);
                 return result;
             }
 
@@ -96,7 +97,7 @@ public class WeatherSkills implements LocalToolProvider {
                     "windPower", live.path("windpower").asText(""),
                     "humidity", live.path("humidity").asText(""),
                     "reportTime", live.path("reporttime").asText(""));
-            toolEventService.recordToolResult(TOOL_NAME, result);
+            toolEventService.recordToolResult(toolContext, TOOL_NAME, result);
             return result;
         } catch (Exception ex) {
             log.warn("Weather tool failed", ex);
@@ -104,7 +105,7 @@ public class WeatherSkills implements LocalToolProvider {
                     "ok", false,
                     "error", "weather request failed: " + ex.getMessage(),
                     "city", normalizedCity);
-            toolEventService.recordToolResult(TOOL_NAME, result);
+            toolEventService.recordToolResult(toolContext, TOOL_NAME, result);
             return result;
         }
     }

@@ -67,5 +67,11 @@ export function mergeTimelineItems(streamItems: TimelineItem[], historyItems: Ti
     }
   }
 
-  return [...merged.values()].sort((a, b) => a.seq - b.seq)
+  return [...merged.values()].sort((a, b) => {
+    const timeDiff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    if (timeDiff !== 0) {
+      return timeDiff
+    }
+    return a.seq - b.seq
+  })
 }

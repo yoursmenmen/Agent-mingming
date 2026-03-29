@@ -8,13 +8,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mingming.agent.entity.AgentRunEntity;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.repository.AgentRunRepository;
 import com.mingming.agent.repository.ChatSessionRepository;
 import com.mingming.agent.repository.RunEventRepository;
 import com.mingming.agent.tool.LocalToolProvider;
-import com.mingming.agent.tool.ToolRunContextHolder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -43,9 +42,6 @@ class AgentOrchestratorTest {
     @Mock
     private RunEventRepository runEventRepository;
 
-    @Mock
-    private ToolRunContextHolder toolRunContextHolder;
-
     @Test
     void runOnce_shouldPersistUserAndModelEventsWithIncreasingSeq() throws Exception {
         when(chatModelProvider.getIfAvailable()).thenReturn(null);
@@ -56,12 +52,12 @@ class AgentOrchestratorTest {
                 chatSessionRepository,
                 agentRunRepository,
                 runEventRepository,
-                List.<LocalToolProvider>of(),
-                toolRunContextHolder);
+                List.<LocalToolProvider>of());
 
         UUID runId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
         when(runEventRepository.findRecentConversationEvents(sessionId, 40)).thenReturn(List.of());
+        when(runEventRepository.findByRunIdOrderBySeqAsc(runId)).thenReturn(List.of());
 
         List<String> ssePayloads = new ArrayList<>();
 
@@ -97,8 +93,7 @@ class AgentOrchestratorTest {
                 chatSessionRepository,
                 agentRunRepository,
                 runEventRepository,
-                List.<LocalToolProvider>of(),
-                toolRunContextHolder);
+                List.<LocalToolProvider>of());
 
         UUID previousRunId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
@@ -132,8 +127,7 @@ class AgentOrchestratorTest {
                 chatSessionRepository,
                 agentRunRepository,
                 runEventRepository,
-                List.<LocalToolProvider>of(),
-                toolRunContextHolder);
+                List.<LocalToolProvider>of());
 
         UUID sessionId = UUID.randomUUID();
 
@@ -163,8 +157,7 @@ class AgentOrchestratorTest {
                 chatSessionRepository,
                 agentRunRepository,
                 runEventRepository,
-                List.<LocalToolProvider>of(),
-                toolRunContextHolder);
+                List.<LocalToolProvider>of());
 
         UUID existingSessionId = UUID.randomUUID();
         AgentOrchestrator.RunInit runInit = orchestrator.startRun(existingSessionId, "dashscope", null, null, "system.txt");
@@ -184,8 +177,7 @@ class AgentOrchestratorTest {
                 chatSessionRepository,
                 agentRunRepository,
                 runEventRepository,
-                List.<LocalToolProvider>of(),
-                toolRunContextHolder);
+                List.<LocalToolProvider>of());
 
         UUID missingSessionId = UUID.randomUUID();
 
@@ -194,5 +186,29 @@ class AgentOrchestratorTest {
                 .hasMessageContaining("sessionId not found");
         verify(chatSessionRepository, never()).save(any());
         verify(agentRunRepository, never()).save(any());
+    }
+
+    @Test
+    void buildFinalModelMessagePayload_shouldContainStructuredWeatherData() {
+        AgentOrchestrator orchestrator = new AgentOrchestrator(
+                chatModelProvider,
+                new ObjectMapper(),
+                chatSessionRepository,
+                agentRunRepository,
+                runEventRepository,
+                List.<LocalToolProvider>of());
+
+        UUID runId = UUID.randomUUID();
+        RunEventEntity weatherToolResult = new RunEventEntity();
+        weatherToolResult.setType("TOOL_RESULT");
+        weatherToolResult.setPayload("{\"tool\":\"get_weather\",\"data\":{\"ok\":true,\"city\":\"北京\",\"weather\":\"晴\",\"temperature\":\"26\",\"humidity\":\"42\",\"windDirection\":\"东南\",\"windPower\":\"3\",\"reportTime\":\"2026-03-29 17:00:00\"}}");
+        when(runEventRepository.findByRunIdOrderBySeqAsc(runId)).thenReturn(List.of(weatherToolResult));
+
+        ObjectNode payload = orchestrator.buildFinalModelMessagePayload(runId, "北京现在晴，26度");
+
+        assertThat(payload.path("content").asText()).isEqualTo("北京现在晴，26度");
+        assertThat(payload.path("structured").path("schema").asText()).isEqualTo("weather.v1");
+        assertThat(payload.path("structured").path("city").asText()).isEqualTo("北京");
+        assertThat(payload.path("structured").path("weather").asText()).isEqualTo("晴");
     }
 }

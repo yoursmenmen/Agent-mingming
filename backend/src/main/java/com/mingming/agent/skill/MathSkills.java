@@ -5,6 +5,7 @@ import com.mingming.agent.tool.LocalToolProvider;
 import com.mingming.agent.tool.ToolMetadata;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
 
@@ -15,10 +16,10 @@ public class MathSkills implements LocalToolProvider {
     private final ToolEventService toolEventService;
 
     @Tool(name = "add", description = "Add two numbers")
-    public Map<String, Object> add(double a, double b) {
-        toolEventService.recordToolCall("add", Map.of("a", a, "b", b));
+    public Map<String, Object> add(double a, double b, ToolContext toolContext) {
+        toolEventService.recordToolCall(toolContext, "add", Map.of("a", a, "b", b));
         Map<String, Object> result = Map.of("result", a + b);
-        toolEventService.recordToolResult("add", result);
+        toolEventService.recordToolResult(toolContext, "add", result);
         return result;
     }
 

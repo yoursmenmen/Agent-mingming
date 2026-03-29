@@ -10,11 +10,11 @@ import com.mingming.agent.repository.AgentRunRepository;
 import com.mingming.agent.repository.ChatSessionRepository;
 import com.mingming.agent.repository.RunEventRepository;
 import com.mingming.agent.tool.LocalToolProvider;
-import com.mingming.agent.tool.ToolRunContextHolder;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.RequiredArgsConstructor;
@@ -39,7 +39,6 @@ public class AgentOrchestrator {
     private final AgentRunRepository agentRunRepository;
     private final RunEventRepository runEventRepository;
     private final List<LocalToolProvider> localToolProviders;
-    private final ToolRunContextHolder toolRunContextHolder;
 
     public record RunInit(UUID sessionId, UUID runId) {}
 
@@ -98,15 +97,18 @@ public class AgentOrchestrator {
         appendEvent(runId, seq.getAndIncrement(), RunEventType.USER_MESSAGE, userPayload);
 
         ChatModel chatModel = chatModelProvider.getIfAvailable();
-        String content = chatModel == null
-                ? "当前未配置 DashScope 模型，已切换到本地回退响应。你可以先继续联调前后端链路，配置好 AI_DASHSCOPE_API_KEY 后再接入真实大模型输出。"
-                : callModelWithTools(chatModel, runId, seq, promptMessages);
+        String content;
+        if (chatModel == null) {
+            content = "当前未配置 DashScope 模型，已切换到本地回退响应。你可以先继续联调前后端链路，配置好 AI_DASHSCOPE_API_KEY 后再接入真实大模型输出。";
+            ObjectNode deltaPayload = objectMapper.createObjectNode();
+            deltaPayload.put("content", content);
+            sseDataConsumer.accept(deltaPayload.toString());
+        } else {
+            content = streamModelWithTools(chatModel, runId, seq, promptMessages, sseDataConsumer);
+        }
 
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("content", content);
+        ObjectNode payload = buildFinalModelMessagePayload(runId, content);
         appendEvent(runId, seq.getAndIncrement(), RunEventType.MODEL_MESSAGE, payload);
-
-        sseDataConsumer.accept(payload.toString());
     }
 
     List<Message> buildPromptMessages(UUID sessionId, String userText) {
@@ -175,18 +177,72 @@ public class AgentOrchestrator {
         }
     }
 
-    private String callModelWithTools(ChatModel chatModel, UUID runId, AtomicInteger seq, List<Message> promptMessages) {
-        toolRunContextHolder.start(runId, seq);
-        try {
-            return ChatClient.builder(chatModel)
-                    .build()
-                    .prompt()
-                    .messages(promptMessages.toArray(new Message[0]))
-                    .tools(localToolProviders.stream().map(LocalToolProvider::toolBean).toArray())
-                    .call()
-                    .content();
-        } finally {
-            toolRunContextHolder.clear();
+    private String streamModelWithTools(
+            ChatModel chatModel,
+            UUID runId,
+            AtomicInteger seq,
+            List<Message> promptMessages,
+            java.util.function.Consumer<String> sseDataConsumer) {
+        StringBuilder contentBuilder = new StringBuilder();
+        ChatClient.builder(chatModel)
+                .build()
+                .prompt()
+                .messages(promptMessages.toArray(new Message[0]))
+                .tools(localToolProviders.stream().map(LocalToolProvider::toolBean).toArray())
+                .toolContext(Map.of(
+                        "runId", runId.toString(),
+                        "seqCounter", seq))
+                .stream()
+                .content()
+                .doOnNext(delta -> {
+                    if (delta == null || delta.isBlank()) {
+                        return;
+                    }
+                    contentBuilder.append(delta);
+                    ObjectNode deltaPayload = objectMapper.createObjectNode();
+                    deltaPayload.put("content", delta);
+                    sseDataConsumer.accept(deltaPayload.toString());
+                })
+                .blockLast();
+        return contentBuilder.toString();
+    }
+
+    ObjectNode buildFinalModelMessagePayload(UUID runId, String content) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("content", content == null ? "" : content);
+
+        extractWeatherStructuredData(runId).ifPresent(structured -> payload.set("structured", objectMapper.valueToTree(structured)));
+        return payload;
+    }
+
+    private java.util.Optional<Map<String, Object>> extractWeatherStructuredData(UUID runId) {
+        List<RunEventEntity> events = runEventRepository.findByRunIdOrderBySeqAsc(runId);
+        for (int i = events.size() - 1; i >= 0; i--) {
+            RunEventEntity event = events.get(i);
+            if (!RunEventType.TOOL_RESULT.name().equals(event.getType())) {
+                continue;
+            }
+            try {
+                com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(event.getPayload());
+                if (!"get_weather".equals(root.path("tool").asText())) {
+                    continue;
+                }
+                com.fasterxml.jackson.databind.JsonNode data = root.path("data");
+                if (!data.path("ok").asBoolean(false)) {
+                    continue;
+                }
+                return java.util.Optional.of(Map.of(
+                        "schema", "weather.v1",
+                        "city", data.path("city").asText(""),
+                        "weather", data.path("weather").asText(""),
+                        "temperature", data.path("temperature").asText(""),
+                        "humidity", data.path("humidity").asText(""),
+                        "windDirection", data.path("windDirection").asText(""),
+                        "windPower", data.path("windPower").asText(""),
+                        "reportTime", data.path("reportTime").asText("")));
+            } catch (Exception ignored) {
+            }
         }
+        return java.util.Optional.empty();
     }
 }

@@ -175,3 +175,32 @@ Flyway migrations：
 - `ToolsControllerTest`：验证工具列表接口返回。
 - `ToolEventServiceTest`：验证 `TOOL_CALL` 事件落库。
 - 保持现有 orchestrator / session timeline 测试通过。
+
+## 8) 2026-03-29 迭代（真流式输出 + 天气结构化结果）
+
+### 后端：真流式输出（MODEL_DELTA）
+- `AgentOrchestrator` 从 `.call().content()` 切换为 `ChatClient.stream().content()`。
+- 每个增量 chunk 通过 SSE 立刻推送到前端（用于实时显示）。
+- 数据库存储采用主流低成本策略：
+  - 不持久化每个 delta chunk
+  - 仅持久化最终 `MODEL_MESSAGE`（加上 `USER_MESSAGE` 与工具事件）
+
+结果：前端不再“等全量后一次性返回”，而是实时字符/片段级输出。
+
+### 修复：流式模式下工具事件缺失
+- 原因：`TOOL_CALL/TOOL_RESULT` 记录依赖 `ThreadLocal`，在流式响应链路中上下文线程不稳定，导致工具事件偶发丢失。
+- 修复：改为使用 Spring AI `ToolContext` 传递 `runId` 与 `seqCounter`，工具方法记录事件时直接从 `ToolContext` 读取上下文。
+
+结果：即使在流式输出模式下，工具调用与结果也可稳定落库并在时间线回放。
+
+### 后端：天气场景结构化输出
+- 在 `MODEL_MESSAGE` payload 中新增可选 `structured` 字段。
+- 当本轮检测到 `get_weather` 工具成功结果时，自动附带 `weather.v1` 结构化对象：
+  - `city`、`weather`、`temperature`、`humidity`、`windDirection`、`windPower`、`reportTime`
+
+结果：天气问答既有人类可读 `content`，也有机器可消费结构化数据。
+
+### 前端：按 MODEL_DELTA 实时拼接 + 时间线分层
+- 聊天区继续按 SSE `event` 的 `content` 实时拼接。
+- 流式临时时间线项类型改为 `MODEL_DELTA`。
+- 历史时间线以持久化事件为准（`MODEL_MESSAGE` + 工具事件）；`MODEL_DELTA` 仅作为流式临时态展示。

@@ -2,7 +2,6 @@ package com.mingming.agent.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -10,17 +9,16 @@ import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.repository.RunEventRepository;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.ai.chat.model.ToolContext;
 
 @ExtendWith(MockitoExtension.class)
 class ToolEventServiceTest {
-
-    @Mock
-    private ToolRunContextHolder contextHolder;
 
     @Mock
     private RunEventRepository runEventRepository;
@@ -28,11 +26,12 @@ class ToolEventServiceTest {
     @Test
     void recordToolCall_shouldPersistToolCallEvent() throws Exception {
         UUID runId = UUID.randomUUID();
-        when(contextHolder.currentRunId()).thenReturn(runId);
-        when(contextHolder.nextSeq()).thenReturn(3);
+        ToolContext toolContext = new ToolContext(Map.of(
+                "runId", runId.toString(),
+                "seqCounter", new AtomicInteger(3)));
 
-        ToolEventService service = new ToolEventService(contextHolder, runEventRepository, new ObjectMapper());
-        service.recordToolCall("add", Map.of("a", 1, "b", 2));
+        ToolEventService service = new ToolEventService(runEventRepository, new ObjectMapper());
+        service.recordToolCall(toolContext, "add", Map.of("a", 1, "b", 2));
 
         ArgumentCaptor<RunEventEntity> captor = ArgumentCaptor.forClass(RunEventEntity.class);
         verify(runEventRepository).save(captor.capture());
