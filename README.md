@@ -57,11 +57,13 @@ cd backend
 # required
 export AI_DASHSCOPE_API_KEY="<your_key>"
 export AGENT_API_TOKEN="dev-token-change-me"
+export AMAP_WEATHER_API_KEY="<your_amap_key>"
 
 # optional override
 # export DB_URL="jdbc:postgresql://localhost:5432/agentdb"
 # export DB_USER="agent"
 # export DB_PASSWORD="agent"
+# export AMAP_WEATHER_BASE_URL="https://restapi.amap.com"
 
 mvn spring-boot:run
 ```

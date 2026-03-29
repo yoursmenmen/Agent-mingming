@@ -158,6 +158,15 @@ Flyway migrations：
 ### 后端：工具清单接口
 - 新增 `GET /api/tools`，返回当前可用本地工具（`now`、`add`）。
 
+### 后端：高德天气工具接入（amap）
+- 新增 `WeatherSkills`（`@Tool name = get_weather`），支持按城市名查询实时天气。
+- 使用环境变量读取配置：
+  - `AMAP_WEATHER_API_KEY`
+  - `AMAP_WEATHER_BASE_URL`（可选，默认 `https://restapi.amap.com`）
+- `WeatherSkills` 同样实现 `LocalToolProvider`，因此会被自动：
+  - 注册到模型 tool calling 列表
+  - 暴露到 `/api/tools` 前端工具清单
+
 ### 前端：展示可用工具
 - 新增工具列表请求与状态：启动时拉取 `/api/tools`。
 - 在 `RunStatusPanel` 展示“可用工具”清单，方便调试和学习。
