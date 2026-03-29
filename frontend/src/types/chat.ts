@@ -10,9 +10,11 @@ export interface ChatMessage {
 
 export interface ChatRequest {
   message: string
+  sessionId?: string
 }
 
 export interface StreamRunEvent {
+  sessionId: string
   runId: string
 }
 

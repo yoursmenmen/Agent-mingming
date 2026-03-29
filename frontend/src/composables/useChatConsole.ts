@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { fetchRunEvents, postChatStream } from '../services/api'
+import { fetchRunEvents, fetchSessionEvents, postChatStream } from '../services/api'
 import { createStreamTimelineItem, mapRunEventToTimelineItem, mergeTimelineItems } from '../services/eventMapper'
 import { consumeSseStream } from '../services/sse'
 import type { ChatMessage, StreamErrorEvent, StreamMessageEvent, StreamRunEvent } from '../types/chat'
@@ -20,6 +20,7 @@ export function useChatConsole() {
     },
   ])
   const draft = ref('')
+  const sessionId = ref<string | null>(null)
   const runId = ref('等待新会话')
   const runStatus = ref<RunStatus>('idle')
   const streamItems = ref<TimelineItem[]>([])
@@ -81,14 +82,19 @@ export function useChatConsole() {
   }
 
   async function refreshRunEvents() {
-    if (!runId.value || runId.value === '等待新会话') {
+    const hasSession = Boolean(sessionId.value)
+    const hasRun = Boolean(runId.value && runId.value !== '等待新会话')
+    if (!hasSession && !hasRun) {
       return
     }
 
     isRefreshing.value = true
     try {
-      const events = await fetchRunEvents(runId.value)
+      const events = sessionId.value
+        ? await fetchSessionEvents(sessionId.value)
+        : await fetchRunEvents(runId.value)
       historyItems.value = events.map(mapRunEventToTimelineItem)
+      streamItems.value = []
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : '拉取运行事件失败'
     } finally {
@@ -108,19 +114,22 @@ export function useChatConsole() {
     runStatus.value = 'streaming'
     runId.value = '建立连接中…'
     streamItems.value = []
-    historyItems.value = []
     streamSeq.value = 1
     createAssistantPlaceholder()
 
     let streamFailed = false
 
     try {
-      const response = await postChatStream({ message: content })
+      const response = await postChatStream({
+        message: content,
+        sessionId: sessionId.value ?? undefined,
+      })
       await consumeSseStream(response, (packet) => {
         const now = new Date().toISOString()
 
         if (packet.event === 'run') {
           const payload = JSON.parse(packet.data) as StreamRunEvent
+          sessionId.value = payload.sessionId
           runId.value = payload.runId
           return
         }
@@ -184,6 +193,7 @@ export function useChatConsole() {
   return {
     messages,
     draft,
+    sessionId,
     runId,
     runStatus,
     timelineItems,

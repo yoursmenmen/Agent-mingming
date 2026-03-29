@@ -10,6 +10,7 @@ import { DEV_TOKEN } from './services/api'
 const {
   messages,
   draft,
+  sessionId,
   runId,
   runStatus,
   timelineItems,
@@ -107,6 +108,7 @@ function openSidebarPanel(panel: 'status' | 'timeline') {
           />
           <TimelinePanel
             v-show="expandedSidebarPanel === 'timeline'"
+            :session-id="sessionId"
             :run-id="runId"
             :timeline-items="timelineItems"
             :format-time="formatTime"
@@ -116,4 +118,3 @@ function openSidebarPanel(panel: 'status' | 'timeline') {
     </main>
   </div>
 </template>
-

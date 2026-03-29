@@ -2,6 +2,7 @@
 import type { TimelineItem } from '../types/run'
 
 defineProps<{
+  sessionId: string | null
   runId: string
   timelineItems: TimelineItem[]
   formatTime: (value: string) => string
@@ -15,11 +16,13 @@ defineProps<{
         <p class="panel-kicker">Trace</p>
         <h2>事件时间线</h2>
       </div>
-      <p class="panel-tip">GET /api/runs/{{ runId }}/events</p>
+      <p class="panel-tip">
+        {{ sessionId ? `GET /api/sessions/${sessionId}/events` : `GET /api/runs/${runId}/events` }}
+      </p>
     </div>
 
     <div class="timeline-panel-body">
-      <div v-if="!timelineItems.length" class="empty-state">发送第一条消息后，这里会出现 run event 时间线。</div>
+      <div v-if="!timelineItems.length" class="empty-state">发送第一条消息后，这里会出现会话级事件时间线。</div>
 
       <ol v-else class="timeline-list">
         <li v-for="item in timelineItems" :key="`${item.source}-${item.id}-${item.seq}`" class="timeline-item">

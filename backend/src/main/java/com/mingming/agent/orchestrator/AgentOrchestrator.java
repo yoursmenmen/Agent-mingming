@@ -31,18 +31,23 @@ public class AgentOrchestrator {
 
     public record RunInit(UUID sessionId, UUID runId) {}
 
-    public RunInit startRun(String model, Double temperature, Double topP, String systemPromptVersion) {
-        UUID sessionId = UUID.randomUUID();
-        UUID runId = UUID.randomUUID();
+    public RunInit startRun(UUID sessionId, String model, Double temperature, Double topP, String systemPromptVersion) {
+        UUID resolvedSessionId = sessionId;
+        if (resolvedSessionId == null) {
+            resolvedSessionId = UUID.randomUUID();
+            ChatSessionEntity session = new ChatSessionEntity();
+            session.setId(resolvedSessionId);
+            session.setCreatedAt(OffsetDateTime.now());
+            chatSessionRepository.save(session);
+        } else if (!chatSessionRepository.existsById(resolvedSessionId)) {
+            throw new IllegalArgumentException("sessionId not found: " + resolvedSessionId);
+        }
 
-        ChatSessionEntity session = new ChatSessionEntity();
-        session.setId(sessionId);
-        session.setCreatedAt(OffsetDateTime.now());
-        chatSessionRepository.save(session);
+        UUID runId = UUID.randomUUID();
 
         AgentRunEntity run = new AgentRunEntity();
         run.setId(runId);
-        run.setSessionId(sessionId);
+        run.setSessionId(resolvedSessionId);
         run.setCreatedAt(OffsetDateTime.now());
         run.setModel(model);
         run.setTemperature(temperature);
@@ -50,7 +55,7 @@ public class AgentOrchestrator {
         run.setSystemPromptVersion(systemPromptVersion);
         agentRunRepository.save(run);
 
-        return new RunInit(sessionId, runId);
+        return new RunInit(resolvedSessionId, runId);
     }
 
     public void appendEvent(UUID runId, int seq, RunEventType type, ObjectNode payload) {
@@ -74,6 +79,10 @@ public class AgentOrchestrator {
      */
     public void runOnce(UUID runId, String userText, java.util.function.Consumer<String> sseDataConsumer) {
         AtomicInteger seq = new AtomicInteger(1);
+
+        ObjectNode userPayload = objectMapper.createObjectNode();
+        userPayload.put("content", userText);
+        appendEvent(runId, seq.getAndIncrement(), RunEventType.USER_MESSAGE, userPayload);
 
         ChatModel chatModel = chatModelProvider.getIfAvailable();
         String content = chatModel == null
