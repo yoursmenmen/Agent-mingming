@@ -10,9 +10,14 @@ import com.mingming.agent.repository.AgentRunRepository;
 import com.mingming.agent.repository.ChatSessionRepository;
 import com.mingming.agent.repository.RunEventRepository;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.RequiredArgsConstructor;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -22,6 +27,9 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class AgentOrchestrator {
+
+    private static final int MAX_CONTEXT_MESSAGES = 20;
+    private static final int MAX_CONTEXT_CHARS = 12_000;
 
     private final ObjectProvider<ChatModel> chatModelProvider;
     private final ObjectMapper objectMapper;
@@ -77,8 +85,9 @@ public class AgentOrchestrator {
      * MVP streaming: currently emits MODEL_MESSAGE once (non-token streaming).
      * We'll evolve to true token streaming after confirming provider streaming behavior.
      */
-    public void runOnce(UUID runId, String userText, java.util.function.Consumer<String> sseDataConsumer) {
+    public void runOnce(UUID runId, UUID sessionId, String userText, java.util.function.Consumer<String> sseDataConsumer) {
         AtomicInteger seq = new AtomicInteger(1);
+        List<Message> promptMessages = buildPromptMessages(sessionId, userText);
 
         ObjectNode userPayload = objectMapper.createObjectNode();
         userPayload.put("content", userText);
@@ -90,7 +99,7 @@ public class AgentOrchestrator {
                 : ChatClient.builder(chatModel)
                         .build()
                         .prompt()
-                        .messages(new UserMessage(userText))
+                        .messages(promptMessages.toArray(new Message[0]))
                         .call()
                         .content();
 
@@ -99,5 +108,71 @@ public class AgentOrchestrator {
         appendEvent(runId, seq.getAndIncrement(), RunEventType.MODEL_MESSAGE, payload);
 
         sseDataConsumer.accept(payload.toString());
+    }
+
+    List<Message> buildPromptMessages(UUID sessionId, String userText) {
+        List<Message> historyMessages = loadSessionHistoryMessages(sessionId);
+        List<Message> trimmedHistory = trimHistoryMessages(historyMessages);
+        List<Message> promptMessages = new ArrayList<>(trimmedHistory);
+        promptMessages.add(new UserMessage(userText));
+        return promptMessages;
+    }
+
+    private List<Message> loadSessionHistoryMessages(UUID sessionId) {
+        List<RunEventEntity> events = new ArrayList<>(
+                runEventRepository.findRecentConversationEvents(sessionId, MAX_CONTEXT_MESSAGES * 2));
+        Collections.reverse(events);
+
+        return events.stream()
+                .map(this::toPromptMessage)
+                .flatMap(java.util.Optional::stream)
+                .toList();
+    }
+
+    private List<Message> trimHistoryMessages(List<Message> historyMessages) {
+        int historyMessageLimit = Math.max(0, MAX_CONTEXT_MESSAGES - 1);
+        List<Message> reversedSelected = new ArrayList<>();
+        int totalChars = 0;
+
+        for (int i = historyMessages.size() - 1; i >= 0; i--) {
+            if (reversedSelected.size() >= historyMessageLimit) {
+                break;
+            }
+            Message candidate = historyMessages.get(i);
+            int messageLength = candidate.getText() == null ? 0 : candidate.getText().length();
+            if (!reversedSelected.isEmpty() && totalChars + messageLength > MAX_CONTEXT_CHARS) {
+                break;
+            }
+            if (reversedSelected.isEmpty() && messageLength > MAX_CONTEXT_CHARS) {
+                continue;
+            }
+            reversedSelected.add(candidate);
+            totalChars += messageLength;
+        }
+
+        Collections.reverse(reversedSelected);
+        return reversedSelected;
+    }
+
+    private java.util.Optional<Message> toPromptMessage(RunEventEntity event) {
+        String content = extractContent(event.getPayload());
+        if (content == null || content.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        if (RunEventType.USER_MESSAGE.name().equals(event.getType())) {
+            return java.util.Optional.of(new UserMessage(content));
+        }
+        if (RunEventType.MODEL_MESSAGE.name().equals(event.getType())) {
+            return java.util.Optional.of(new AssistantMessage(content));
+        }
+        return java.util.Optional.empty();
+    }
+
+    private String extractContent(String payloadJson) {
+        try {
+            return objectMapper.readTree(payloadJson).path("content").asText("");
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 }

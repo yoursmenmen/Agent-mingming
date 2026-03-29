@@ -89,3 +89,49 @@ Flyway migrations：
   - 后续前端会用 `fetch()` + ReadableStream 自己解析 SSE（推荐）
   - 或者把后端改为 GET（message 走 query/body 方案需要再设计）
 - DashScope 的“真正 token 级流式输出”与“结构化 tool calls”还会继续增强（按 MVP 逐步完善）。
+
+## 6) 2026-03-29 迭代（会话复用、时间线、后端分层）
+
+### 会话复用 + 事件落库增强
+- `ChatController` 请求体新增可选 `sessionId`，并在 `event: run` 中回传 `sessionId` + `runId`。
+- `AgentOrchestrator.startRun(...)` 支持：
+  - 未提供 `sessionId` 时新建 `chat_session`
+  - 提供 `sessionId` 时复用该会话并新建 `agent_run`
+- `RunEventType` 新增 `USER_MESSAGE`，并在模型调用前先落用户消息事件。
+
+结果：同一会话可产生多次 run；每次 run 内 `seq` 仍从 1 递增，但跨 run 不混淆。
+
+### 时间线升级为会话维度
+- 后端新增接口：`GET /api/sessions/{sessionId}/events`
+- 前端优先按 session 拉取事件（否则回退按 run），并在历史拉取成功后清空临时流式项，避免重复显示。
+
+结果：时间线不再每轮输入都清空，也不会出现同一条模型消息在 user 前后重复。
+
+### 后端分层重构（Controller 瘦身）
+- 新增 `RunEventQueryService`，将 run/session 事件查询与映射逻辑从 `RunsController` 下沉到 service。
+- `RunsController` 仅保留 HTTP 路由与参数绑定。
+
+结果：控制器职责更清晰，后续扩展过滤、分页、权限检查时更容易维护。
+
+### 多轮上下文记忆（进行中）
+- `AgentOrchestrator` 新增历史消息装配逻辑：
+  - 按 `sessionId` 汇总历史 `USER_MESSAGE` 与 `MODEL_MESSAGE`
+  - 组装为模型输入消息序列，再拼接当前用户输入
+- 增加上下文窗口保护：
+  - `MAX_CONTEXT_MESSAGES = 20`
+  - `MAX_CONTEXT_CHARS = 12000`
+- 优化历史查询性能：
+  - `runOnce` 直接使用后端已确认的 `sessionId`，不再额外通过 `runId` 反查
+  - 新增 `run_event` + `agent_run` 联表限量查询，只取最近会话对话事件（`USER_MESSAGE`/`MODEL_MESSAGE`）
+
+结果：模型在后续轮次可读取前文，同时避免上下文无限增长。
+
+### 新增/更新测试
+- `AgentOrchestratorTest`
+  - 验证用户消息与模型消息落库顺序与 `seq`
+  - 验证 session 复用与 session 不存在异常
+  - 验证历史消息装配与上下文窗口限制
+- `RunsControllerTest`
+  - 验证 controller 对 service 的委托
+- `RunEventQueryServiceTest`
+  - 验证会话内跨 run 事件聚合与空会话处理
