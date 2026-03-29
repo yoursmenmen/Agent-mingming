@@ -12,4 +12,5 @@
 /.claude/**
 /frontend/.claude/
 /CLAUDE.md
+/AGENT_CONTEXT.local.md
 /opencode.json
