@@ -6,3 +6,10 @@
 /backend/src/main/resources/application-local.yml
 /docker/postgres/data/*
 !/docker/postgres/data/.gitkeep
+
+# Local AI tooling artifacts
+/.claude/
+/.claude/**
+/frontend/.claude/
+/CLAUDE.md
+/opencode.json
