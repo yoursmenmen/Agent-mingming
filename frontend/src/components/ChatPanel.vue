@@ -57,6 +57,17 @@ watch(
 onMounted(() => {
   void scrollToBottom()
 })
+
+function handleComposerKeydown(event: KeyboardEvent) {
+  if (event.isComposing) {
+    return
+  }
+
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    emit('send')
+  }
+}
 </script>
 
 <template>
@@ -102,6 +113,7 @@ onMounted(() => {
           class="composer-input"
           rows="3"
           placeholder="试试输入：帮我总结这个项目当前能力"
+          @keydown="handleComposerKeydown"
         />
         <div class="composer-footer">
           <span>使用固定开发 token，经由 Vite 代理访问后端</span>
