@@ -3,6 +3,7 @@ package com.mingming.agent.orchestrator;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -10,13 +11,16 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mingming.agent.entity.RunEventEntity;
+import com.mingming.agent.rag.Bm25RetrieverService;
+import com.mingming.agent.rag.DocsChunk;
+import com.mingming.agent.rag.DocsChunkingService;
+import com.mingming.agent.rag.RetrievalEventService;
 import com.mingming.agent.repository.AgentRunRepository;
 import com.mingming.agent.repository.ChatSessionRepository;
 import com.mingming.agent.repository.RunEventRepository;
 import com.mingming.agent.tool.LocalToolProvider;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,18 +46,21 @@ class AgentOrchestratorTest {
     @Mock
     private RunEventRepository runEventRepository;
 
+    @Mock
+    private DocsChunkingService docsChunkingService;
+
+    @Mock
+    private Bm25RetrieverService bm25RetrieverService;
+
+    @Mock
+    private RetrievalEventService retrievalEventService;
+
     @Test
     void runOnce_shouldPersistUserAndModelEventsWithIncreasingSeq() throws Exception {
         when(chatModelProvider.getIfAvailable()).thenReturn(null);
+        when(docsChunkingService.loadChunks(any())).thenReturn(List.of());
 
-        AgentOrchestrator orchestrator = new AgentOrchestrator(
-                chatModelProvider,
-                new ObjectMapper(),
-                chatSessionRepository,
-                agentRunRepository,
-                runEventRepository,
-                List.<LocalToolProvider>of(),
-                new StructuredPayloadAssembler(new ObjectMapper()));
+        AgentOrchestrator orchestrator = createOrchestrator();
 
         UUID runId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
@@ -79,23 +86,60 @@ class AgentOrchestratorTest {
 
         RunEventEntity second = savedEvents.get(1);
         assertThat(second.getRunId()).isEqualTo(runId);
-        assertThat(second.getSeq()).isEqualTo(2);
+        assertThat(second.getSeq()).isEqualTo(3);
         assertThat(second.getType()).isEqualTo("MODEL_MESSAGE");
 
         assertThat(ssePayloads).hasSize(1);
         assertThat(new ObjectMapper().readTree(ssePayloads.get(0)).has("content")).isTrue();
+
+        ArgumentCaptor<List<Bm25RetrieverService.RetrievalHit>> retrievalHitsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(retrievalEventService).record(eq(runId), eq(2), eq("你好，测试消息"), retrievalHitsCaptor.capture());
+        assertThat(retrievalHitsCaptor.getValue()).isEmpty();
+    }
+
+    @Test
+    void buildPromptMessages_shouldInjectRetrievalContextBeforeCurrentUserMessage() {
+        AgentOrchestrator orchestrator = createOrchestrator();
+
+        UUID sessionId = UUID.randomUUID();
+        when(runEventRepository.findRecentConversationEvents(sessionId, 40)).thenReturn(List.of());
+
+        List<Bm25RetrieverService.RetrievalHit> retrievalHits = List.of(new Bm25RetrieverService.RetrievalHit(
+                new DocsChunk("chunk-1", "docs/project-overview.md", "项目概览", "这是召回内容", 8),
+                1.23));
+
+        List<Message> promptMessages = orchestrator.buildPromptMessages(sessionId, "当前问题", retrievalHits);
+
+        assertThat(promptMessages).hasSize(2);
+        assertThat(promptMessages.get(0).getText()).contains("docs/project-overview.md");
+        assertThat(promptMessages.get(0).getText()).contains("这是召回内容");
+        assertThat(promptMessages.get(1).getText()).isEqualTo("当前问题");
+    }
+
+    @Test
+    void runOnce_shouldGracefullyDegradeWhenDocsUnavailable() {
+        when(chatModelProvider.getIfAvailable()).thenReturn(null);
+        when(docsChunkingService.loadChunks(any())).thenThrow(new IllegalStateException("docs missing"));
+
+        AgentOrchestrator orchestrator = createOrchestrator();
+
+        UUID runId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        when(runEventRepository.findRecentConversationEvents(sessionId, 40)).thenReturn(List.of());
+        when(runEventRepository.findByRunIdOrderBySeqAsc(runId)).thenReturn(List.of());
+
+        List<String> ssePayloads = new ArrayList<>();
+        orchestrator.runOnce(runId, sessionId, "文档不可用时也要继续", ssePayloads::add);
+
+        ArgumentCaptor<List<Bm25RetrieverService.RetrievalHit>> retrievalHitsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(retrievalEventService).record(eq(runId), eq(2), eq("文档不可用时也要继续"), retrievalHitsCaptor.capture());
+        assertThat(retrievalHitsCaptor.getValue()).isEmpty();
+        assertThat(ssePayloads).hasSize(1);
     }
 
     @Test
     void buildPromptMessages_shouldIncludeHistoryAndCurrentUserMessage() {
-        AgentOrchestrator orchestrator = new AgentOrchestrator(
-                chatModelProvider,
-                new ObjectMapper(),
-                chatSessionRepository,
-                agentRunRepository,
-                runEventRepository,
-                List.<LocalToolProvider>of(),
-                new StructuredPayloadAssembler(new ObjectMapper()));
+        AgentOrchestrator orchestrator = createOrchestrator();
 
         UUID previousRunId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
@@ -123,14 +167,7 @@ class AgentOrchestratorTest {
 
     @Test
     void buildPromptMessages_shouldLimitHistorySizeForContextWindow() {
-        AgentOrchestrator orchestrator = new AgentOrchestrator(
-                chatModelProvider,
-                new ObjectMapper(),
-                chatSessionRepository,
-                agentRunRepository,
-                runEventRepository,
-                List.<LocalToolProvider>of(),
-                new StructuredPayloadAssembler(new ObjectMapper()));
+        AgentOrchestrator orchestrator = createOrchestrator();
 
         UUID sessionId = UUID.randomUUID();
 
@@ -154,14 +191,7 @@ class AgentOrchestratorTest {
     void startRun_shouldReuseExistingSessionId() {
         when(chatSessionRepository.existsById(any(UUID.class))).thenReturn(true);
 
-        AgentOrchestrator orchestrator = new AgentOrchestrator(
-                chatModelProvider,
-                new ObjectMapper(),
-                chatSessionRepository,
-                agentRunRepository,
-                runEventRepository,
-                List.<LocalToolProvider>of(),
-                new StructuredPayloadAssembler(new ObjectMapper()));
+        AgentOrchestrator orchestrator = createOrchestrator();
 
         UUID existingSessionId = UUID.randomUUID();
         AgentOrchestrator.RunInit runInit = orchestrator.startRun(existingSessionId, "dashscope", null, null, "system.txt");
@@ -175,14 +205,7 @@ class AgentOrchestratorTest {
     void startRun_shouldThrowWhenSessionIdNotFound() {
         when(chatSessionRepository.existsById(any(UUID.class))).thenReturn(false);
 
-        AgentOrchestrator orchestrator = new AgentOrchestrator(
-                chatModelProvider,
-                new ObjectMapper(),
-                chatSessionRepository,
-                agentRunRepository,
-                runEventRepository,
-                List.<LocalToolProvider>of(),
-                new StructuredPayloadAssembler(new ObjectMapper()));
+        AgentOrchestrator orchestrator = createOrchestrator();
 
         UUID missingSessionId = UUID.randomUUID();
 
@@ -195,14 +218,7 @@ class AgentOrchestratorTest {
 
     @Test
     void buildFinalModelMessagePayload_shouldContainStructuredPayloadFromAssembler() {
-        AgentOrchestrator orchestrator = new AgentOrchestrator(
-                chatModelProvider,
-                new ObjectMapper(),
-                chatSessionRepository,
-                agentRunRepository,
-                runEventRepository,
-                List.<LocalToolProvider>of(),
-                new StructuredPayloadAssembler(new ObjectMapper()));
+        AgentOrchestrator orchestrator = createOrchestrator();
 
         UUID runId = UUID.randomUUID();
         RunEventEntity weatherToolResult = new RunEventEntity();
@@ -218,5 +234,19 @@ class AgentOrchestratorTest {
         assertThat(payload.path("structured").path("data").path("city").asText()).isEqualTo("北京");
         assertThat(payload.path("structured").path("data").path("condition").asText()).isEqualTo("晴");
         assertThat(payload.path("structured").path("meta").path("toolName").asText()).isEqualTo("get_weather");
+    }
+
+    private AgentOrchestrator createOrchestrator() {
+        return new AgentOrchestrator(
+                chatModelProvider,
+                new ObjectMapper(),
+                chatSessionRepository,
+                agentRunRepository,
+                runEventRepository,
+                List.<LocalToolProvider>of(),
+                new StructuredPayloadAssembler(new ObjectMapper()),
+                docsChunkingService,
+                bm25RetrieverService,
+                retrievalEventService);
     }
 }

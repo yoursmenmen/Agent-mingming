@@ -228,3 +228,40 @@ Flyway migrations：
   - 统一卡片容器、标题区、内容区与状态态（streaming）样式，提升对比度与可读性。
   - 增加 `structured-card-enter` 入场动画与移动端栅格降级规则，保证手机端信息不拥挤。
 - 新增 `frontend/src/components/structured/style-smoke.test.ts`：对关键 token、核心 class hook、动画与移动端规则做样式冒烟校验，防止后续样式回归。
+
+## 11) 2026-03-30 迭代（Docs RAG BM25 + 检索事件可观测）
+
+### 后端：docs 分块与 BM25 检索
+- 新增 `com.mingming.agent.rag.DocsChunk` 作为统一 chunk 数据结构。
+- 新增 `DocsChunkingService`：
+  - 扫描 `docs/` 下 Markdown 文件并按相对路径稳定排序。
+  - 按标题层级生成 `headingPath`，按段落切分并做短段合并/长段拆分。
+  - 基于 `docPath|headingPath|offset` 生成稳定 `chunkId`。
+- 新增 `Bm25RetrieverService`：
+  - 提供 `search/retrieve`，支持 `topK` 和阈值过滤。
+  - 词元策略覆盖英文数字 token 与中文 bigram。
+
+### 后端：检索事件落库并接入编排
+- `RunEventType` 新增 `RETRIEVAL_RESULT`。
+- 新增 `RetrievalEventService`：将检索结果写入 `run_event`，payload 包含：
+  - `query`
+  - `hitCount`
+  - `hits`（`chunkId/docPath/headingPath/snippet/score`）
+- `AgentOrchestrator.runOnce(...)` 增加链路：
+  - `load docs chunks -> BM25 检索 -> 记录 RETRIEVAL_RESULT`
+  - 将召回内容注入 prompt（“检索参考资料”）后再发起模型调用
+  - docs 不可用/检索异常时自动降级为空检索，不中断回答主流程
+
+### 前端：时间线检索事件可读摘要
+- 更新 `frontend/src/services/eventMapper.ts`：
+  - 针对 `RETRIEVAL_RESULT` 输出人类可读摘要（命中数、查询词、代表文档）。
+  - 无命中时明确展示 `未命中` 与 `N/A` 代表文档。
+- 新增 `frontend/src/services/eventMapper.test.ts` 覆盖命中/未命中摘要分支。
+
+### 测试与夹具
+- 新增后端测试：
+  - `DocsChunkingServiceTest`
+  - `Bm25RetrieverServiceTest`
+  - `RetrievalEventServiceTest`
+- 更新 `AgentOrchestratorTest`，补充检索事件 seq 与 prompt 注入断言。
+- 新增 `docs/rag-fixtures/` 夹具文档（`architecture-long.md`、`release-notes.md`、`noise.md`）用于检索与展示场景验证。

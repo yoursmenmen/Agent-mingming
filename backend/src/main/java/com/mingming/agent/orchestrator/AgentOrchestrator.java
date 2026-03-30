@@ -6,10 +6,15 @@ import com.mingming.agent.entity.AgentRunEntity;
 import com.mingming.agent.entity.ChatSessionEntity;
 import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.event.RunEventType;
+import com.mingming.agent.rag.Bm25RetrieverService;
+import com.mingming.agent.rag.DocsChunk;
+import com.mingming.agent.rag.DocsChunkingService;
+import com.mingming.agent.rag.RetrievalEventService;
 import com.mingming.agent.repository.AgentRunRepository;
 import com.mingming.agent.repository.ChatSessionRepository;
 import com.mingming.agent.repository.RunEventRepository;
 import com.mingming.agent.tool.LocalToolProvider;
+import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,6 +23,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.client.ChatClient;
@@ -30,8 +37,12 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AgentOrchestrator {
 
+    private static final Logger log = LoggerFactory.getLogger(AgentOrchestrator.class);
+
     private static final int MAX_CONTEXT_MESSAGES = 20;
     private static final int MAX_CONTEXT_CHARS = 12_000;
+    private static final int RETRIEVAL_TOP_K = 3;
+    private static final double RETRIEVAL_THRESHOLD = 0.0D;
 
     private final ObjectProvider<ChatModel> chatModelProvider;
     private final ObjectMapper objectMapper;
@@ -40,6 +51,9 @@ public class AgentOrchestrator {
     private final RunEventRepository runEventRepository;
     private final List<LocalToolProvider> localToolProviders;
     private final StructuredPayloadAssembler structuredPayloadAssembler;
+    private final DocsChunkingService docsChunkingService;
+    private final Bm25RetrieverService bm25RetrieverService;
+    private final RetrievalEventService retrievalEventService;
 
     public record RunInit(UUID sessionId, UUID runId) {}
 
@@ -91,11 +105,16 @@ public class AgentOrchestrator {
      */
     public void runOnce(UUID runId, UUID sessionId, String userText, java.util.function.Consumer<String> sseDataConsumer) {
         AtomicInteger seq = new AtomicInteger(1);
-        List<Message> promptMessages = buildPromptMessages(sessionId, userText);
 
         ObjectNode userPayload = objectMapper.createObjectNode();
         userPayload.put("content", userText);
         appendEvent(runId, seq.getAndIncrement(), RunEventType.USER_MESSAGE, userPayload);
+
+        List<DocsChunk> docsChunks = loadDocsChunks(runId);
+        List<Bm25RetrieverService.RetrievalHit> retrievalHits = retrieve(runId, userText, docsChunks);
+        retrievalEventService.record(runId, seq.getAndIncrement(), userText, retrievalHits);
+
+        List<Message> promptMessages = buildPromptMessages(sessionId, userText, retrievalHits);
 
         ChatModel chatModel = chatModelProvider.getIfAvailable();
         String content;
@@ -113,11 +132,95 @@ public class AgentOrchestrator {
     }
 
     List<Message> buildPromptMessages(UUID sessionId, String userText) {
+        return buildPromptMessages(sessionId, userText, List.of());
+    }
+
+    List<Message> buildPromptMessages(
+            UUID sessionId, String userText, List<Bm25RetrieverService.RetrievalHit> retrievalHits) {
         List<Message> historyMessages = loadSessionHistoryMessages(sessionId);
         List<Message> trimmedHistory = trimHistoryMessages(historyMessages);
         List<Message> promptMessages = new ArrayList<>(trimmedHistory);
+        String retrievalContext = buildRetrievalContext(retrievalHits);
+        if (!retrievalContext.isBlank()) {
+            promptMessages.add(new UserMessage(retrievalContext));
+        }
         promptMessages.add(new UserMessage(userText));
         return promptMessages;
+    }
+
+    private List<DocsChunk> loadDocsChunks(UUID runId) {
+        List<DocsChunk> docsChunks = safeLoadChunks(runId, Path.of("../docs"));
+        if (!docsChunks.isEmpty()) {
+            return docsChunks;
+        }
+        return safeLoadChunks(runId, Path.of("docs"));
+    }
+
+    private List<DocsChunk> safeLoadChunks(UUID runId, Path docsRoot) {
+        try {
+            return docsChunkingService.loadChunks(docsRoot);
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "RAG retrieval degraded: failed to load docs chunks; runId={}, docsRoot={}, exceptionType={}, message={}",
+                    runId,
+                    docsRoot,
+                    ex.getClass().getSimpleName(),
+                    ex.getMessage(),
+                    ex);
+            return List.of();
+        }
+    }
+
+    private List<Bm25RetrieverService.RetrievalHit> retrieve(UUID runId, String userText, List<DocsChunk> docsChunks) {
+        if (docsChunks == null || docsChunks.isEmpty()) {
+            return List.of();
+        }
+        try {
+            return bm25RetrieverService.search(userText, docsChunks, RETRIEVAL_TOP_K, RETRIEVAL_THRESHOLD);
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "RAG retrieval degraded: BM25 search failed; runId={}, queryLength={}, queryHash={}, exceptionType={}, message={}",
+                    runId,
+                    userText == null ? 0 : userText.length(),
+                    queryHash(userText),
+                    ex.getClass().getSimpleName(),
+                    ex.getMessage(),
+                    ex);
+            return List.of();
+        }
+    }
+
+    private String queryHash(String text) {
+        if (text == null || text.isBlank()) {
+            return "empty";
+        }
+        return Integer.toHexString(text.hashCode());
+    }
+
+    private String buildRetrievalContext(List<Bm25RetrieverService.RetrievalHit> retrievalHits) {
+        if (retrievalHits == null || retrievalHits.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        builder.append("检索参考资料（仅在与用户问题相关时使用）：\n");
+        for (int i = 0; i < retrievalHits.size(); i++) {
+            Bm25RetrieverService.RetrievalHit hit = retrievalHits.get(i);
+            if (hit == null || hit.chunk() == null) {
+                continue;
+            }
+            DocsChunk chunk = hit.chunk();
+            builder.append(i + 1)
+                    .append('.').append(' ')
+                    .append('[')
+                    .append(chunk.docPath())
+                    .append(" | ")
+                    .append(chunk.headingPath())
+                    .append("]\n")
+                    .append(chunk.content())
+                    .append("\n\n");
+        }
+        return builder.toString().trim();
     }
 
     private List<Message> loadSessionHistoryMessages(UUID sessionId) {
