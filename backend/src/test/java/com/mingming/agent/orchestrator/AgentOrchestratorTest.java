@@ -52,7 +52,8 @@ class AgentOrchestratorTest {
                 chatSessionRepository,
                 agentRunRepository,
                 runEventRepository,
-                List.<LocalToolProvider>of());
+                List.<LocalToolProvider>of(),
+                new StructuredPayloadAssembler(new ObjectMapper()));
 
         UUID runId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
@@ -93,7 +94,8 @@ class AgentOrchestratorTest {
                 chatSessionRepository,
                 agentRunRepository,
                 runEventRepository,
-                List.<LocalToolProvider>of());
+                List.<LocalToolProvider>of(),
+                new StructuredPayloadAssembler(new ObjectMapper()));
 
         UUID previousRunId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
@@ -127,7 +129,8 @@ class AgentOrchestratorTest {
                 chatSessionRepository,
                 agentRunRepository,
                 runEventRepository,
-                List.<LocalToolProvider>of());
+                List.<LocalToolProvider>of(),
+                new StructuredPayloadAssembler(new ObjectMapper()));
 
         UUID sessionId = UUID.randomUUID();
 
@@ -157,7 +160,8 @@ class AgentOrchestratorTest {
                 chatSessionRepository,
                 agentRunRepository,
                 runEventRepository,
-                List.<LocalToolProvider>of());
+                List.<LocalToolProvider>of(),
+                new StructuredPayloadAssembler(new ObjectMapper()));
 
         UUID existingSessionId = UUID.randomUUID();
         AgentOrchestrator.RunInit runInit = orchestrator.startRun(existingSessionId, "dashscope", null, null, "system.txt");
@@ -177,7 +181,8 @@ class AgentOrchestratorTest {
                 chatSessionRepository,
                 agentRunRepository,
                 runEventRepository,
-                List.<LocalToolProvider>of());
+                List.<LocalToolProvider>of(),
+                new StructuredPayloadAssembler(new ObjectMapper()));
 
         UUID missingSessionId = UUID.randomUUID();
 
@@ -189,26 +194,29 @@ class AgentOrchestratorTest {
     }
 
     @Test
-    void buildFinalModelMessagePayload_shouldContainStructuredWeatherData() {
+    void buildFinalModelMessagePayload_shouldContainStructuredPayloadFromAssembler() {
         AgentOrchestrator orchestrator = new AgentOrchestrator(
                 chatModelProvider,
                 new ObjectMapper(),
                 chatSessionRepository,
                 agentRunRepository,
                 runEventRepository,
-                List.<LocalToolProvider>of());
+                List.<LocalToolProvider>of(),
+                new StructuredPayloadAssembler(new ObjectMapper()));
 
         UUID runId = UUID.randomUUID();
         RunEventEntity weatherToolResult = new RunEventEntity();
         weatherToolResult.setType("TOOL_RESULT");
-        weatherToolResult.setPayload("{\"tool\":\"get_weather\",\"data\":{\"ok\":true,\"city\":\"北京\",\"weather\":\"晴\",\"temperature\":\"26\",\"humidity\":\"42\",\"windDirection\":\"东南\",\"windPower\":\"3\",\"reportTime\":\"2026-03-29 17:00:00\"}}");
+        weatherToolResult.setPayload("{\"tool\":\"get_weather\",\"source\":\"amap\",\"data\":{\"ok\":true,\"city\":\"北京\",\"condition\":\"晴\",\"tempC\":26.0,\"feelsLikeC\":27.0,\"humidity\":42,\"windKph\":13.5}}");
         when(runEventRepository.findByRunIdOrderBySeqAsc(runId)).thenReturn(List.of(weatherToolResult));
 
         ObjectNode payload = orchestrator.buildFinalModelMessagePayload(runId, "北京现在晴，26度");
 
         assertThat(payload.path("content").asText()).isEqualTo("北京现在晴，26度");
-        assertThat(payload.path("structured").path("schema").asText()).isEqualTo("weather.v1");
-        assertThat(payload.path("structured").path("city").asText()).isEqualTo("北京");
-        assertThat(payload.path("structured").path("weather").asText()).isEqualTo("晴");
+        assertThat(payload.path("structured").path("type").asText()).isEqualTo("weather");
+        assertThat(payload.path("structured").path("version").asText()).isEqualTo("v1");
+        assertThat(payload.path("structured").path("data").path("city").asText()).isEqualTo("北京");
+        assertThat(payload.path("structured").path("data").path("condition").asText()).isEqualTo("晴");
+        assertThat(payload.path("structured").path("meta").path("toolName").asText()).isEqualTo("get_weather");
     }
 }

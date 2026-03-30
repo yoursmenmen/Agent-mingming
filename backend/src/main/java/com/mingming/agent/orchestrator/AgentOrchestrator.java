@@ -39,6 +39,7 @@ public class AgentOrchestrator {
     private final AgentRunRepository agentRunRepository;
     private final RunEventRepository runEventRepository;
     private final List<LocalToolProvider> localToolProviders;
+    private final StructuredPayloadAssembler structuredPayloadAssembler;
 
     public record RunInit(UUID sessionId, UUID runId) {}
 
@@ -211,38 +212,8 @@ public class AgentOrchestrator {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("content", content == null ? "" : content);
 
-        extractWeatherStructuredData(runId).ifPresent(structured -> payload.set("structured", objectMapper.valueToTree(structured)));
-        return payload;
-    }
-
-    private java.util.Optional<Map<String, Object>> extractWeatherStructuredData(UUID runId) {
         List<RunEventEntity> events = runEventRepository.findByRunIdOrderBySeqAsc(runId);
-        for (int i = events.size() - 1; i >= 0; i--) {
-            RunEventEntity event = events.get(i);
-            if (!RunEventType.TOOL_RESULT.name().equals(event.getType())) {
-                continue;
-            }
-            try {
-                com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(event.getPayload());
-                if (!"get_weather".equals(root.path("tool").asText())) {
-                    continue;
-                }
-                com.fasterxml.jackson.databind.JsonNode data = root.path("data");
-                if (!data.path("ok").asBoolean(false)) {
-                    continue;
-                }
-                return java.util.Optional.of(Map.of(
-                        "schema", "weather.v1",
-                        "city", data.path("city").asText(""),
-                        "weather", data.path("weather").asText(""),
-                        "temperature", data.path("temperature").asText(""),
-                        "humidity", data.path("humidity").asText(""),
-                        "windDirection", data.path("windDirection").asText(""),
-                        "windPower", data.path("windPower").asText(""),
-                        "reportTime", data.path("reportTime").asText("")));
-            } catch (Exception ignored) {
-            }
-        }
-        return java.util.Optional.empty();
+        structuredPayloadAssembler.assemble(events).ifPresent(structured -> payload.set("structured", structured));
+        return payload;
     }
 }

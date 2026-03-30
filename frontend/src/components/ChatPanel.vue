@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import StructuredCardHost from './structured/StructuredCardHost.vue'
 import type { ChatMessage } from '../types/chat'
 import type { RunStatus } from '../types/run'
 
@@ -25,7 +26,7 @@ const draftValue = computed({
 
 const messageRenderKey = computed(() =>
   props.messages
-    .map((message) => `${message.id}:${message.status ?? 'none'}:${message.content.length}`)
+    .map((message) => `${message.id}:${message.status ?? 'none'}:${message.content.length}:${message.structured !== undefined ? 's' : 'n'}`)
     .join('|'),
 )
 
@@ -86,6 +87,7 @@ onMounted(() => {
           </span>
         </div>
         <p>{{ message.content }}</p>
+        <StructuredCardHost :role="message.role" :structured="message.structured" />
         <time>{{ formatTime(message.createdAt) }}</time>
       </article>
       <div ref="bottomAnchorRef" class="message-list-anchor" aria-hidden="true"></div>

@@ -1,12 +1,30 @@
 import { computed, onMounted, ref } from 'vue'
 import { fetchRunEvents, fetchSessionEvents, fetchTools, postChatStream } from '../services/api'
 import { createStreamTimelineItem, mapRunEventToTimelineItem, mergeTimelineItems } from '../services/eventMapper'
+import { parseStructuredPayload } from '../services/structured'
 import { consumeSseStream } from '../services/sse'
 import type { ChatMessage, StreamErrorEvent, StreamMessageEvent, StreamRunEvent } from '../types/chat'
-import type { RunStatus, TimelineItem, ToolInfo } from '../types/run'
+import type { RunEventItem, RunStatus, TimelineItem, ToolInfo } from '../types/run'
+
+type ModelMessagePayload = {
+  content?: unknown
+  structured?: unknown
+}
 
 function createId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`
+}
+
+function parseModelMessagePayload(payload: string): ModelMessagePayload | null {
+  try {
+    const parsed = JSON.parse(payload)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return null
+    }
+    return parsed as ModelMessagePayload
+  } catch {
+    return null
+  }
 }
 
 export function useChatConsole() {
@@ -97,6 +115,38 @@ export function useChatConsole() {
     target.status = 'streaming'
   }
 
+  function attachAssistantStructuredFromPersistedModelMessage(events: RunEventItem[]) {
+    if (!activeAssistantId.value) {
+      return
+    }
+
+    const assistant = messages.value.find((item) => item.id === activeAssistantId.value)
+    if (!assistant) {
+      return
+    }
+
+    const latestModelMessage = events
+      .filter((event) => event.type === 'MODEL_MESSAGE' && event.runId === runId.value)
+      .sort((a, b) => b.seq - a.seq)[0]
+
+    if (!latestModelMessage) {
+      return
+    }
+
+    const payload = parseModelMessagePayload(latestModelMessage.payload)
+    if (!payload) {
+      return
+    }
+
+    if (typeof payload.content === 'string' && payload.content.trim().length > 0) {
+      assistant.content = payload.content
+    }
+
+    if ('structured' in payload) {
+      assistant.structured = parseStructuredPayload(payload.structured)
+    }
+  }
+
   async function refreshRunEvents() {
     const hasSession = Boolean(sessionId.value)
     const hasRun = Boolean(runId.value && runId.value !== '等待新会话')
@@ -111,6 +161,7 @@ export function useChatConsole() {
         : await fetchRunEvents(runId.value)
       historyItems.value = events.map(mapRunEventToTimelineItem)
       streamItems.value = []
+      attachAssistantStructuredFromPersistedModelMessage(events)
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : '拉取运行事件失败'
     } finally {

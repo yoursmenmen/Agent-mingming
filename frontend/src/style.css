@@ -17,6 +17,10 @@
   --accent: #d94680;
   --accent-soft: #f472b6;
   --accent-deep: #b8326a;
+  --structured-glass-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 246, 251, 0.88) 100%);
+  --structured-glass-border: rgba(241, 151, 188, 0.46);
+  --structured-accent-ring: rgba(217, 70, 128, 0.16);
+  --structured-glow: rgba(214, 92, 148, 0.2);
   --shadow: 0 20px 50px rgba(212, 95, 142, 0.14);
   --shadow-soft: 0 10px 30px rgba(212, 95, 142, 0.08);
   --shell-pad: clamp(12px, 2vh, 20px);
@@ -432,6 +436,126 @@ h2 {
   border: 1px solid rgba(190, 24, 93, 0.24);
 }
 
+.message .structured-card-host {
+  margin-top: 8px;
+  width: min(100%, 560px);
+}
+
+.message .structured-card-host .structured-card-shell {
+  position: relative;
+  margin-top: 0;
+  padding: 12px 13px;
+  border-radius: 16px;
+  border: 1px solid var(--structured-glass-border);
+  background: var(--structured-glass-bg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 14px 30px rgba(212, 95, 142, 0.11);
+  backdrop-filter: blur(10px) saturate(1.04);
+  overflow: hidden;
+  animation: structured-card-enter 360ms cubic-bezier(0.18, 0.8, 0.2, 1);
+}
+
+.message .structured-card-host .structured-card-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.4), transparent 38%),
+    radial-gradient(circle at 92% 100%, rgba(244, 114, 182, 0.16), transparent 42%);
+  pointer-events: none;
+}
+
+.message .structured-card-host .structured-card-shell__header {
+  position: relative;
+  margin-bottom: 9px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(241, 151, 188, 0.25);
+}
+
+.message .structured-card-host .structured-card-shell__header h3 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.message .structured-card-host .structured-card-shell__header p {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--text-subtle) 88%, white);
+}
+
+.message .structured-card-host .structured-card-shell__body {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+}
+
+.message .structured-card-host .structured-grid {
+  display: grid;
+  grid-template-columns: minmax(70px, auto) minmax(0, 1fr);
+  gap: 6px 10px;
+}
+
+.message .structured-card-host .structured-grid span,
+.message .structured-card-host .unknown-wrap p,
+.message .structured-card-host .unknown-list span {
+  color: color-mix(in srgb, var(--text-subtle) 92%, white);
+}
+
+.message .structured-card-host .structured-grid strong,
+.message .structured-card-host .calc-row strong,
+.message .structured-card-host .unknown-list strong {
+  color: var(--text-main);
+}
+
+.message .structured-card-host .calc-row code {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(241, 151, 188, 0.25);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.message .structured-card-host .tool-error {
+  gap: 6px;
+}
+
+.message .structured-card-host .retry-chip {
+  border: 1px solid transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.message .structured-card-host .retry-chip--yes {
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.message .structured-card-host .retry-chip--no {
+  border-color: rgba(244, 63, 94, 0.2);
+}
+
+.message .structured-card-host .tool-error p {
+  color: #8a123a;
+}
+
+.message .structured-card-host .unknown-list {
+  margin-top: 2px;
+  padding-left: 0;
+}
+
+.message .structured-card-host .unknown-list li {
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(241, 151, 188, 0.18);
+}
+
+.message--streaming .structured-card-host .structured-card-shell {
+  border-color: color-mix(in srgb, var(--structured-glass-border) 72%, var(--accent) 28%);
+  box-shadow:
+    0 0 0 3px var(--structured-accent-ring),
+    0 16px 34px var(--structured-glow);
+}
+
 .error-banner {
   margin: 0 0 10px;
   padding: 12px 14px;
@@ -840,6 +964,17 @@ pre {
   }
 }
 
+@keyframes structured-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @media (max-width: 1200px) {
   :root {
     --workspace-height: calc(100dvh - var(--shell-pad) * 2 - 142px);
@@ -928,6 +1063,24 @@ pre {
 
   .message {
     max-width: 92%;
+  }
+
+  .message .structured-card-host {
+    width: 100%;
+  }
+
+  .message .structured-card-host .structured-card-shell {
+    padding: 11px 12px;
+    border-radius: 14px;
+  }
+
+  .message .structured-card-host .structured-grid {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .message .structured-card-host .structured-grid strong {
+    margin-bottom: 4px;
   }
 
   .chat-panel {

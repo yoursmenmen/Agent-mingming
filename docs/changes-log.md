@@ -220,3 +220,11 @@ Flyway migrations：
 3. 工具治理增强（超时、重试、错误分类与指标可视化）。
 
 说明：用户已确认“显式 loop 方案不纳入当前计划”。
+
+## 10) 2026-03-30 迭代（结构化卡片视觉升级）
+
+- 前端 `frontend/src/style.css` 为结构化卡片引入 sakura soft-glass 视觉系统：
+  - 新增结构化卡片专用设计变量（玻璃背景、边框、强调光晕）。
+  - 统一卡片容器、标题区、内容区与状态态（streaming）样式，提升对比度与可读性。
+  - 增加 `structured-card-enter` 入场动画与移动端栅格降级规则，保证手机端信息不拥挤。
+- 新增 `frontend/src/components/structured/style-smoke.test.ts`：对关键 token、核心 class hook、动画与移动端规则做样式冒烟校验，防止后续样式回归。

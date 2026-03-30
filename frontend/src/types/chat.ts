@@ -1,3 +1,5 @@
+import type { StructuredPayload } from './structured'
+
 export type ChatRole = 'user' | 'assistant'
 
 export interface ChatMessage {
@@ -6,6 +8,7 @@ export interface ChatMessage {
   content: string
   createdAt: string
   status?: 'streaming' | 'done' | 'error'
+  structured?: StructuredPayload | null
 }
 
 export interface ChatRequest {
