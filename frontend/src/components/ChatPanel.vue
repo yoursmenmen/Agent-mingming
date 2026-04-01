@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import StructuredCardHost from './structured/StructuredCardHost.vue'
 import type { ChatMessage } from '../types/chat'
 import type { RunStatus } from '../types/run'
+import { renderMarkdown } from '../services/markdown'
 
 const props = defineProps<{
   messages: ChatMessage[]
@@ -68,6 +69,19 @@ function handleComposerKeydown(event: KeyboardEvent) {
     emit('send')
   }
 }
+
+function toMessageHtml(message: ChatMessage): string {
+  if (message.role !== 'assistant') {
+    return message.content
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;')
+      .replaceAll('\n', '<br/>')
+  }
+  return renderMarkdown(message.content)
+}
 </script>
 
 <template>
@@ -97,7 +111,7 @@ function handleComposerKeydown(event: KeyboardEvent) {
             实时生成中
           </span>
         </div>
-        <p>{{ message.content }}</p>
+        <div class="message-markdown" v-html="toMessageHtml(message)"></div>
         <StructuredCardHost :role="message.role" :structured="message.structured" />
         <time>{{ formatTime(message.createdAt) }}</time>
       </article>

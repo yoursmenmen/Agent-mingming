@@ -331,6 +331,128 @@ h2 {
   white-space: pre-wrap;
 }
 
+.message .message-markdown {
+  margin: 0;
+  min-width: 0;
+}
+
+.message .message-markdown > :first-child {
+  margin-top: 0;
+}
+
+.message .message-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.message .message-markdown p {
+  margin: 0.35rem 0;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.message--assistant .message-markdown {
+  color: var(--text-main);
+  font-family: 'LXGW WenKai Lite', 'LXGW WenKai', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+.message--assistant .message-markdown h1,
+.message--assistant .message-markdown h2,
+.message--assistant .message-markdown h3,
+.message--assistant .message-markdown h4,
+.message--assistant .message-markdown h5,
+.message--assistant .message-markdown h6 {
+  margin: 0.5rem 0 0.4rem;
+  line-height: 1.28;
+  letter-spacing: 0.01em;
+}
+
+.message--assistant .message-markdown h1 {
+  color: #d94680;
+  font-size: 1.06rem;
+  border-bottom: 2px dotted rgba(239, 152, 192, 0.6);
+  padding-bottom: 0.18rem;
+}
+
+.message--assistant .message-markdown h2 {
+  color: #e35492;
+  font-size: 1rem;
+}
+
+.message--assistant .message-markdown h3 {
+  color: #b24179;
+  font-size: 0.96rem;
+}
+
+.message--assistant .message-markdown ul,
+.message--assistant .message-markdown ol {
+  margin: 0.35rem 0;
+  padding-left: 1.2rem;
+}
+
+.message--assistant .message-markdown li {
+  margin: 0.15rem 0;
+}
+
+.message--assistant .message-markdown a {
+  color: #d23f7b;
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(210, 63, 123, 0.45);
+}
+
+.message--assistant .message-markdown code {
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 214, 234, 0.55);
+  border: 1px solid rgba(240, 159, 194, 0.45);
+  color: #a62d68;
+}
+
+.message--assistant .message-markdown pre {
+  margin: 0.45rem 0;
+  padding: 0.55rem 0.65rem;
+  border-radius: 11px;
+  background: rgba(255, 248, 253, 0.9);
+  border: 1px solid rgba(241, 151, 188, 0.32);
+  overflow: auto;
+}
+
+.message--assistant .message-markdown pre code {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+.message--assistant .message-markdown blockquote {
+  margin: 0.45rem 0;
+  padding: 0.35rem 0.6rem;
+  border-left: 3px solid rgba(244, 114, 182, 0.6);
+  background: rgba(255, 241, 248, 0.58);
+  border-radius: 0 8px 8px 0;
+  color: #7f3456;
+}
+
+.message--assistant .message-markdown table {
+  width: 100%;
+  margin: 0.45rem 0;
+  border-collapse: collapse;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(241, 151, 188, 0.35);
+}
+
+.message--assistant .message-markdown th,
+.message--assistant .message-markdown td {
+  padding: 0.32rem 0.45rem;
+  border-bottom: 1px solid rgba(241, 151, 188, 0.25);
+  text-align: left;
+}
+
+.message--assistant .message-markdown th {
+  background: rgba(255, 220, 235, 0.52);
+  color: #a23668;
+}
+
 .message time {
   display: block;
   margin-top: 4px;

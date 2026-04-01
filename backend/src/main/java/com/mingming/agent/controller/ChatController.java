@@ -68,7 +68,7 @@ public class ChatController {
                     emitter.send(SseEmitter.event().name("error").data(err.toString()));
                 } catch (IOException ignored) {
                 }
-                emitter.completeWithError(e);
+                emitter.complete();
             }
         }).start();
 

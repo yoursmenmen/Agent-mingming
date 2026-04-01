@@ -57,4 +57,28 @@ describe('ChatPanel keyboard send behavior', () => {
 
     expect(wrapper.emitted('send')).toBeUndefined()
   })
+
+  it('renders assistant markdown as html blocks', () => {
+    const wrapper = mount(ChatPanel, {
+      props: {
+        messages: [
+          {
+            id: 'm-md',
+            role: 'assistant',
+            content: '# 标题\n\n- 条目A\n- 条目B',
+            createdAt: new Date().toISOString(),
+            status: 'done',
+            structured: null,
+          },
+        ],
+        draft: '',
+        runStatus: 'idle',
+        errorMessage: '',
+        formatTime: (value: string) => value,
+      },
+    })
+
+    expect(wrapper.find('.message-markdown h1').text()).toBe('标题')
+    expect(wrapper.findAll('.message-markdown li')).toHaveLength(2)
+  })
 })
