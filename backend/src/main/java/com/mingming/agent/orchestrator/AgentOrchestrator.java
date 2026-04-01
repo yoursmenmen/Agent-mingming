@@ -6,10 +6,12 @@ import com.mingming.agent.entity.AgentRunEntity;
 import com.mingming.agent.entity.ChatSessionEntity;
 import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.event.RunEventType;
-import com.mingming.agent.rag.Bm25RetrieverService;
 import com.mingming.agent.rag.DocsChunk;
 import com.mingming.agent.rag.DocsChunkingService;
+import com.mingming.agent.rag.HybridRetrievalService;
 import com.mingming.agent.rag.RetrievalEventService;
+import com.mingming.agent.rag.Bm25RetrieverService;
+import com.mingming.agent.rag.VectorRagProperties;
 import com.mingming.agent.repository.AgentRunRepository;
 import com.mingming.agent.repository.ChatSessionRepository;
 import com.mingming.agent.repository.RunEventRepository;
@@ -18,8 +20,10 @@ import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.RequiredArgsConstructor;
@@ -41,8 +45,11 @@ public class AgentOrchestrator {
 
     private static final int MAX_CONTEXT_MESSAGES = 20;
     private static final int MAX_CONTEXT_CHARS = 12_000;
-    private static final int RETRIEVAL_TOP_K = 3;
-    private static final double RETRIEVAL_THRESHOLD = 0.0D;
+    private static final int RETRIEVAL_BM25_TOP_K = 3;
+    private static final double RETRIEVAL_BM25_THRESHOLD = 0.0D;
+    private static final int RETRIEVAL_VECTOR_TOP_K = 3;
+    private static final double RETRIEVAL_VECTOR_THRESHOLD = 0.0D;
+    private static final int RETRIEVAL_FINAL_TOP_N = 3;
 
     private final ObjectProvider<ChatModel> chatModelProvider;
     private final ObjectMapper objectMapper;
@@ -52,7 +59,8 @@ public class AgentOrchestrator {
     private final List<LocalToolProvider> localToolProviders;
     private final StructuredPayloadAssembler structuredPayloadAssembler;
     private final DocsChunkingService docsChunkingService;
-    private final Bm25RetrieverService bm25RetrieverService;
+    private final VectorRagProperties vectorRagProperties;
+    private final HybridRetrievalService hybridRetrievalService;
     private final RetrievalEventService retrievalEventService;
 
     public record RunInit(UUID sessionId, UUID runId) {}
@@ -111,8 +119,22 @@ public class AgentOrchestrator {
         appendEvent(runId, seq.getAndIncrement(), RunEventType.USER_MESSAGE, userPayload);
 
         List<DocsChunk> docsChunks = loadDocsChunks(runId);
-        List<Bm25RetrieverService.RetrievalHit> retrievalHits = retrieve(runId, userText, docsChunks);
-        retrievalEventService.record(runId, seq.getAndIncrement(), userText, retrievalHits);
+        HybridRetrievalService.RetrievalResult retrievalResult = retrieve(runId, userText, docsChunks);
+        List<Bm25RetrieverService.RetrievalHit> retrievalHits = retrievalResult.hits().stream()
+                .map(HybridRetrievalService.RetrievalResultHit::hit)
+                .toList();
+        retrievalEventService.record(
+                runId,
+                seq.getAndIncrement(),
+                userText,
+                new RetrievalEventService.RetrievalMeta(
+                        retrievalResult.strategy(),
+                        retrievalResult.vectorHitCount(),
+                        retrievalResult.bm25HitCount(),
+                        retrievalResult.finalHitCount()),
+                retrievalResult.hits().stream()
+                        .map(hit -> new RetrievalEventService.RetrievalResultHit(hit.hit(), hit.source()))
+                        .toList());
 
         List<Message> promptMessages = buildPromptMessages(sessionId, userText, retrievalHits);
 
@@ -149,11 +171,25 @@ public class AgentOrchestrator {
     }
 
     private List<DocsChunk> loadDocsChunks(UUID runId) {
-        List<DocsChunk> docsChunks = safeLoadChunks(runId, Path.of("../docs"));
-        if (!docsChunks.isEmpty()) {
-            return docsChunks;
+        List<Path> candidateRoots = buildDocsRootCandidates();
+        for (Path candidateRoot : candidateRoots) {
+            List<DocsChunk> chunks = safeLoadChunks(runId, candidateRoot);
+            if (!chunks.isEmpty()) {
+                return chunks;
+            }
         }
-        return safeLoadChunks(runId, Path.of("docs"));
+        return List.of();
+    }
+
+    private List<Path> buildDocsRootCandidates() {
+        Set<Path> candidates = new LinkedHashSet<>();
+        String configuredRoot = vectorRagProperties.getDocsRoot();
+        if (configuredRoot != null && !configuredRoot.isBlank()) {
+            candidates.add(Path.of(configuredRoot));
+        }
+        candidates.add(Path.of("../docs"));
+        candidates.add(Path.of("docs"));
+        return List.copyOf(candidates);
     }
 
     private List<DocsChunk> safeLoadChunks(UUID runId, Path docsRoot) {
@@ -171,22 +207,26 @@ public class AgentOrchestrator {
         }
     }
 
-    private List<Bm25RetrieverService.RetrievalHit> retrieve(UUID runId, String userText, List<DocsChunk> docsChunks) {
-        if (docsChunks == null || docsChunks.isEmpty()) {
-            return List.of();
-        }
+    private HybridRetrievalService.RetrievalResult retrieve(UUID runId, String userText, List<DocsChunk> docsChunks) {
         try {
-            return bm25RetrieverService.search(userText, docsChunks, RETRIEVAL_TOP_K, RETRIEVAL_THRESHOLD);
+            return hybridRetrievalService.searchWithObservability(
+                    userText,
+                    docsChunks == null ? List.of() : docsChunks,
+                    RETRIEVAL_BM25_TOP_K,
+                    RETRIEVAL_BM25_THRESHOLD,
+                    RETRIEVAL_VECTOR_TOP_K,
+                    RETRIEVAL_VECTOR_THRESHOLD,
+                    RETRIEVAL_FINAL_TOP_N);
         } catch (RuntimeException ex) {
             log.warn(
-                    "RAG retrieval degraded: BM25 search failed; runId={}, queryLength={}, queryHash={}, exceptionType={}, message={}",
+                    "RAG retrieval degraded: hybrid retrieval failed; runId={}, queryLength={}, queryHash={}, exceptionType={}, message={}",
                     runId,
                     userText == null ? 0 : userText.length(),
                     queryHash(userText),
                     ex.getClass().getSimpleName(),
                     ex.getMessage(),
                     ex);
-            return List.of();
+            return new HybridRetrievalService.RetrievalResult("hybrid", 0, 0, 0, List.of());
         }
     }
 

@@ -15,6 +15,10 @@ function summarizeRetrievalPayload(payload: unknown): string | null {
 
   const retrievalPayload = payload as {
     query?: unknown
+    strategy?: unknown
+    vectorHitCount?: unknown
+    bm25HitCount?: unknown
+    finalHitCount?: unknown
     hitCount?: unknown
     hits?: unknown
   }
@@ -28,16 +32,38 @@ function summarizeRetrievalPayload(payload: unknown): string | null {
       (hit): hit is { docPath: string } =>
         Boolean(hit && typeof hit === 'object' && typeof (hit as { docPath?: unknown }).docPath === 'string'),
     )?.docPath ?? 'N/A'
-  const hitCount =
+  const legacyHitCount =
     typeof retrievalPayload.hitCount === 'number' && Number.isFinite(retrievalPayload.hitCount)
       ? retrievalPayload.hitCount
       : hits.length
+  const strategy =
+    typeof retrievalPayload.strategy === 'string' && retrievalPayload.strategy.trim().length > 0
+      ? retrievalPayload.strategy
+      : 'unknown'
+  const vectorHitCount =
+    typeof retrievalPayload.vectorHitCount === 'number' && Number.isFinite(retrievalPayload.vectorHitCount)
+      ? retrievalPayload.vectorHitCount
+      : legacyHitCount
+  const bm25HitCount =
+    typeof retrievalPayload.bm25HitCount === 'number' && Number.isFinite(retrievalPayload.bm25HitCount)
+      ? retrievalPayload.bm25HitCount
+      : legacyHitCount
+  const finalHitCount =
+    typeof retrievalPayload.finalHitCount === 'number' && Number.isFinite(retrievalPayload.finalHitCount)
+      ? retrievalPayload.finalHitCount
+      : legacyHitCount
+  const firstHitSource =
+    hits.find(
+      (hit): hit is { source: string } =>
+        Boolean(hit && typeof hit === 'object' && typeof (hit as { source?: unknown }).source === 'string'),
+    )?.source ?? 'N/A'
 
-  if (hitCount > 0) {
-    return `命中 ${hitCount} 条 | 查询: ${query} | 代表文档: ${representativeDocPath}`
+  const countDetails = `策略: ${strategy} | 向量: ${vectorHitCount} | BM25: ${bm25HitCount} | 最终: ${finalHitCount}`
+  if (finalHitCount > 0) {
+    return `命中 ${finalHitCount} 条 | ${countDetails} | 查询: ${query} | 首条来源: ${firstHitSource} | 代表文档: ${representativeDocPath}`
   }
 
-  return `未命中 | 查询: ${query} | 代表文档: ${representativeDocPath}`
+  return `未命中 | ${countDetails} | 查询: ${query} | 首条来源: ${firstHitSource} | 代表文档: ${representativeDocPath}`
 }
 
 export function summarizePayload(payload: unknown, eventType?: string): string {

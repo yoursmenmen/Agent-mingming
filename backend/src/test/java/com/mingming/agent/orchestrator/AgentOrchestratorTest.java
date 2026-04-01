@@ -14,11 +14,14 @@ import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.rag.Bm25RetrieverService;
 import com.mingming.agent.rag.DocsChunk;
 import com.mingming.agent.rag.DocsChunkingService;
+import com.mingming.agent.rag.HybridRetrievalService;
 import com.mingming.agent.rag.RetrievalEventService;
+import com.mingming.agent.rag.VectorRagProperties;
 import com.mingming.agent.repository.AgentRunRepository;
 import com.mingming.agent.repository.ChatSessionRepository;
 import com.mingming.agent.repository.RunEventRepository;
 import com.mingming.agent.tool.LocalToolProvider;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -50,15 +53,23 @@ class AgentOrchestratorTest {
     private DocsChunkingService docsChunkingService;
 
     @Mock
-    private Bm25RetrieverService bm25RetrieverService;
+    private HybridRetrievalService hybridRetrievalService;
 
     @Mock
     private RetrievalEventService retrievalEventService;
+
+    private final VectorRagProperties vectorRagProperties = new VectorRagProperties();
+
+    AgentOrchestratorTest() {
+        vectorRagProperties.setDocsRoot("../docs");
+    }
 
     @Test
     void runOnce_shouldPersistUserAndModelEventsWithIncreasingSeq() throws Exception {
         when(chatModelProvider.getIfAvailable()).thenReturn(null);
         when(docsChunkingService.loadChunks(any())).thenReturn(List.of());
+        when(hybridRetrievalService.searchWithObservability(eq("你好，测试消息"), eq(List.<DocsChunk>of()), eq(3), eq(0.0D), eq(3), eq(0.0D), eq(3)))
+                .thenReturn(new HybridRetrievalService.RetrievalResult("hybrid", 0, 0, 0, List.of()));
 
         AgentOrchestrator orchestrator = createOrchestrator();
 
@@ -92,9 +103,47 @@ class AgentOrchestratorTest {
         assertThat(ssePayloads).hasSize(1);
         assertThat(new ObjectMapper().readTree(ssePayloads.get(0)).has("content")).isTrue();
 
-        ArgumentCaptor<List<Bm25RetrieverService.RetrievalHit>> retrievalHitsCaptor = ArgumentCaptor.forClass(List.class);
-        verify(retrievalEventService).record(eq(runId), eq(2), eq("你好，测试消息"), retrievalHitsCaptor.capture());
+        ArgumentCaptor<RetrievalEventService.RetrievalMeta> retrievalMetaCaptor =
+                ArgumentCaptor.forClass(RetrievalEventService.RetrievalMeta.class);
+        ArgumentCaptor<List<RetrievalEventService.RetrievalResultHit>> retrievalHitsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(retrievalEventService)
+                .record(eq(runId), eq(2), eq("你好，测试消息"), retrievalMetaCaptor.capture(), retrievalHitsCaptor.capture());
+        assertThat(retrievalMetaCaptor.getValue().strategy()).isEqualTo("hybrid");
+        assertThat(retrievalMetaCaptor.getValue().vectorHitCount()).isEqualTo(0);
+        assertThat(retrievalMetaCaptor.getValue().bm25HitCount()).isEqualTo(0);
+        assertThat(retrievalMetaCaptor.getValue().finalHitCount()).isEqualTo(0);
         assertThat(retrievalHitsCaptor.getValue()).isEmpty();
+        verify(hybridRetrievalService)
+                .searchWithObservability(eq("你好，测试消息"), eq(List.<DocsChunk>of()), eq(3), eq(0.0D), eq(3), eq(0.0D), eq(3));
+    }
+
+    @Test
+    void runOnce_shouldUseHybridRetrievalWhenDocsAvailable() {
+        when(chatModelProvider.getIfAvailable()).thenReturn(null);
+        when(docsChunkingService.loadChunks(any()))
+                .thenReturn(List.of(new DocsChunk("chunk-a", "docs/a.md", "A", "检索片段", 8)));
+        when(hybridRetrievalService.searchWithObservability(eq("请检索"), any(), eq(3), eq(0.0D), eq(3), eq(0.0D), eq(3)))
+                .thenReturn(new HybridRetrievalService.RetrievalResult(
+                        "hybrid",
+                        2,
+                        1,
+                        1,
+                        List.of(new HybridRetrievalService.RetrievalResultHit(
+                                new Bm25RetrieverService.RetrievalHit(
+                                        new DocsChunk("chunk-a", "docs/a.md", "A", "检索片段", 8),
+                                        1.0),
+                                "bm25"))));
+
+        AgentOrchestrator orchestrator = createOrchestrator();
+
+        UUID runId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        when(runEventRepository.findRecentConversationEvents(sessionId, 40)).thenReturn(List.of());
+        when(runEventRepository.findByRunIdOrderBySeqAsc(runId)).thenReturn(List.of());
+
+        orchestrator.runOnce(runId, sessionId, "请检索", payload -> {});
+
+        verify(hybridRetrievalService).searchWithObservability(eq("请检索"), any(), eq(3), eq(0.0D), eq(3), eq(0.0D), eq(3));
     }
 
     @Test
@@ -120,6 +169,8 @@ class AgentOrchestratorTest {
     void runOnce_shouldGracefullyDegradeWhenDocsUnavailable() {
         when(chatModelProvider.getIfAvailable()).thenReturn(null);
         when(docsChunkingService.loadChunks(any())).thenThrow(new IllegalStateException("docs missing"));
+        when(hybridRetrievalService.searchWithObservability(eq("文档不可用时也要继续"), eq(List.<DocsChunk>of()), eq(3), eq(0.0D), eq(3), eq(0.0D), eq(3)))
+                .thenReturn(new HybridRetrievalService.RetrievalResult("hybrid", 0, 0, 0, List.of()));
 
         AgentOrchestrator orchestrator = createOrchestrator();
 
@@ -131,10 +182,106 @@ class AgentOrchestratorTest {
         List<String> ssePayloads = new ArrayList<>();
         orchestrator.runOnce(runId, sessionId, "文档不可用时也要继续", ssePayloads::add);
 
-        ArgumentCaptor<List<Bm25RetrieverService.RetrievalHit>> retrievalHitsCaptor = ArgumentCaptor.forClass(List.class);
-        verify(retrievalEventService).record(eq(runId), eq(2), eq("文档不可用时也要继续"), retrievalHitsCaptor.capture());
+        ArgumentCaptor<RetrievalEventService.RetrievalMeta> retrievalMetaCaptor =
+                ArgumentCaptor.forClass(RetrievalEventService.RetrievalMeta.class);
+        ArgumentCaptor<List<RetrievalEventService.RetrievalResultHit>> retrievalHitsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(retrievalEventService)
+                .record(eq(runId), eq(2), eq("文档不可用时也要继续"), retrievalMetaCaptor.capture(), retrievalHitsCaptor.capture());
+        assertThat(retrievalMetaCaptor.getValue().finalHitCount()).isEqualTo(0);
         assertThat(retrievalHitsCaptor.getValue()).isEmpty();
+        verify(hybridRetrievalService)
+                .searchWithObservability(eq("文档不可用时也要继续"), eq(List.<DocsChunk>of()), eq(3), eq(0.0D), eq(3), eq(0.0D), eq(3));
         assertThat(ssePayloads).hasSize(1);
+    }
+
+    @Test
+    void runOnce_shouldLoadDocsFromConfiguredVectorDocsRoot() {
+        vectorRagProperties.setDocsRoot("custom-docs");
+        when(chatModelProvider.getIfAvailable()).thenReturn(null);
+        when(docsChunkingService.loadChunks(Path.of("custom-docs")))
+                .thenReturn(List.of(new DocsChunk("chunk-root", "docs/root.md", "Root", "root", 2)));
+        when(hybridRetrievalService.searchWithObservability(eq("读取配置路径"), any(), eq(3), eq(0.0D), eq(3), eq(0.0D), eq(3)))
+                .thenReturn(new HybridRetrievalService.RetrievalResult("hybrid", 1, 1, 1, List.of()));
+
+        AgentOrchestrator orchestrator = createOrchestrator();
+        UUID runId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        when(runEventRepository.findRecentConversationEvents(sessionId, 40)).thenReturn(List.of());
+        when(runEventRepository.findByRunIdOrderBySeqAsc(runId)).thenReturn(List.of());
+
+        orchestrator.runOnce(runId, sessionId, "读取配置路径", payload -> {});
+
+        verify(docsChunkingService).loadChunks(Path.of("custom-docs"));
+    }
+
+    @Test
+    void runOnce_shouldFallbackToDefaultDocsRootsWhenPrimaryDocsRootReturnsEmpty() {
+        vectorRagProperties.setDocsRoot("missing-docs");
+        when(chatModelProvider.getIfAvailable()).thenReturn(null);
+        when(docsChunkingService.loadChunks(Path.of("missing-docs"))).thenReturn(List.of());
+        List<DocsChunk> fallbackChunks = List.of(new DocsChunk("chunk-fallback", "docs/fallback.md", "Fallback", "fallback", 3));
+        when(docsChunkingService.loadChunks(Path.of("../docs"))).thenReturn(fallbackChunks);
+        when(hybridRetrievalService.searchWithObservability(eq("触发回退路径"), eq(fallbackChunks), eq(3), eq(0.0D), eq(3), eq(0.0D), eq(3)))
+                .thenReturn(new HybridRetrievalService.RetrievalResult("hybrid", 1, 1, 1, List.of()));
+
+        AgentOrchestrator orchestrator = createOrchestrator();
+        UUID runId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        when(runEventRepository.findRecentConversationEvents(sessionId, 40)).thenReturn(List.of());
+        when(runEventRepository.findByRunIdOrderBySeqAsc(runId)).thenReturn(List.of());
+
+        orchestrator.runOnce(runId, sessionId, "触发回退路径", payload -> {});
+
+        verify(docsChunkingService).loadChunks(Path.of("missing-docs"));
+        verify(docsChunkingService).loadChunks(Path.of("../docs"));
+        verify(hybridRetrievalService)
+                .searchWithObservability(eq("触发回退路径"), eq(fallbackChunks), eq(3), eq(0.0D), eq(3), eq(0.0D), eq(3));
+    }
+
+    @Test
+    void runOnce_shouldRecordRetrievalEventWithRealObservabilityMetadataAndHitSources() {
+        when(chatModelProvider.getIfAvailable()).thenReturn(null);
+        when(docsChunkingService.loadChunks(any()))
+                .thenReturn(List.of(new DocsChunk("chunk-a", "docs/a.md", "A", "检索片段", 8)));
+
+        HybridRetrievalService.RetrievalResult retrievalResult = new HybridRetrievalService.RetrievalResult(
+                "hybrid",
+                2,
+                3,
+                2,
+                List.of(
+                        new HybridRetrievalService.RetrievalResultHit(
+                                new Bm25RetrieverService.RetrievalHit(
+                                        new DocsChunk("chunk-a", "docs/a.md", "A", "检索片段", 8),
+                                        1.2),
+                                "hybrid"),
+                        new HybridRetrievalService.RetrievalResultHit(
+                                new Bm25RetrieverService.RetrievalHit(
+                                        new DocsChunk("chunk-b", "docs/b.md", "B", "向量片段", 7),
+                                        1.1),
+                                "vector")));
+        when(hybridRetrievalService.searchWithObservability(eq("观测字段"), any(), eq(3), eq(0.0D), eq(3), eq(0.0D), eq(3)))
+                .thenReturn(retrievalResult);
+
+        AgentOrchestrator orchestrator = createOrchestrator();
+        UUID runId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        when(runEventRepository.findRecentConversationEvents(sessionId, 40)).thenReturn(List.of());
+        when(runEventRepository.findByRunIdOrderBySeqAsc(runId)).thenReturn(List.of());
+
+        orchestrator.runOnce(runId, sessionId, "观测字段", payload -> {});
+
+        ArgumentCaptor<RetrievalEventService.RetrievalMeta> retrievalMetaCaptor =
+                ArgumentCaptor.forClass(RetrievalEventService.RetrievalMeta.class);
+        ArgumentCaptor<List<RetrievalEventService.RetrievalResultHit>> retrievalHitsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(retrievalEventService)
+                .record(eq(runId), eq(2), eq("观测字段"), retrievalMetaCaptor.capture(), retrievalHitsCaptor.capture());
+        assertThat(retrievalMetaCaptor.getValue().strategy()).isEqualTo("hybrid");
+        assertThat(retrievalMetaCaptor.getValue().vectorHitCount()).isEqualTo(2);
+        assertThat(retrievalMetaCaptor.getValue().bm25HitCount()).isEqualTo(3);
+        assertThat(retrievalMetaCaptor.getValue().finalHitCount()).isEqualTo(2);
+        assertThat(retrievalHitsCaptor.getValue()).extracting(RetrievalEventService.RetrievalResultHit::source)
+                .containsExactly("hybrid", "vector");
     }
 
     @Test
@@ -246,7 +393,8 @@ class AgentOrchestratorTest {
                 List.<LocalToolProvider>of(),
                 new StructuredPayloadAssembler(new ObjectMapper()),
                 docsChunkingService,
-                bm25RetrieverService,
+                vectorRagProperties,
+                hybridRetrievalService,
                 retrievalEventService);
     }
 }

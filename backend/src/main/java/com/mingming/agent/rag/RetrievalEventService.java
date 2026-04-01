@@ -17,11 +17,21 @@ import org.springframework.stereotype.Service;
 public class RetrievalEventService {
 
     private static final int MAX_SNIPPET_CHARS = 200;
+    private static final String DEFAULT_STRATEGY = "hybrid";
+    private static final String DEFAULT_SOURCE = "hybrid";
 
     private final RunEventRepository runEventRepository;
     private final ObjectMapper objectMapper;
 
     public void record(UUID runId, int seq, String query, List<Bm25RetrieverService.RetrievalHit> hits) {
+        List<RetrievalResultHit> enrichedHits = (hits == null ? List.<Bm25RetrieverService.RetrievalHit>of() : hits).stream()
+                .map(hit -> new RetrievalResultHit(hit, DEFAULT_SOURCE))
+                .toList();
+        int hitCount = enrichedHits.size();
+        record(runId, seq, query, new RetrievalMeta(DEFAULT_STRATEGY, hitCount, hitCount, hitCount), enrichedHits);
+    }
+
+    public void record(UUID runId, int seq, String query, RetrievalMeta retrievalMeta, List<RetrievalResultHit> hits) {
         if (runId == null || seq <= 0) {
             return;
         }
@@ -29,21 +39,31 @@ public class RetrievalEventService {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("query", query == null ? "" : query);
 
-        List<Bm25RetrieverService.RetrievalHit> safeHits = hits == null ? List.of() : hits;
-        payload.put("hitCount", safeHits.size());
+        List<RetrievalResultHit> safeHits = hits == null ? List.of() : hits;
+        int fallbackHitCount = safeHits.size();
+        RetrievalMeta safeMeta = retrievalMeta == null
+                ? new RetrievalMeta(DEFAULT_STRATEGY, fallbackHitCount, fallbackHitCount, fallbackHitCount)
+                : retrievalMeta;
+        payload.put("strategy", normalizeStrategy(safeMeta.strategy()));
+        payload.put("vectorHitCount", sanitizeCount(safeMeta.vectorHitCount(), fallbackHitCount));
+        payload.put("bm25HitCount", sanitizeCount(safeMeta.bm25HitCount(), fallbackHitCount));
+        payload.put("finalHitCount", sanitizeCount(safeMeta.finalHitCount(), fallbackHitCount));
+        payload.put("hitCount", fallbackHitCount);
 
         ArrayNode topHits = payload.putArray("hits");
-        for (Bm25RetrieverService.RetrievalHit hit : safeHits) {
-            if (hit == null || hit.chunk() == null) {
+        for (RetrievalResultHit hit : safeHits) {
+            if (hit == null || hit.hit() == null || hit.hit().chunk() == null) {
                 continue;
             }
-            DocsChunk chunk = hit.chunk();
+            Bm25RetrieverService.RetrievalHit retrievalHit = hit.hit();
+            DocsChunk chunk = retrievalHit.chunk();
             ObjectNode item = topHits.addObject();
             item.put("chunkId", chunk.chunkId());
             item.put("docPath", chunk.docPath());
             item.put("headingPath", chunk.headingPath());
             item.put("snippet", toSnippet(chunk.content()));
-            item.put("score", hit.score());
+            item.put("score", retrievalHit.score());
+            item.put("source", normalizeSource(hit.source()));
         }
 
         RunEventEntity entity = new RunEventEntity();
@@ -56,6 +76,27 @@ public class RetrievalEventService {
         runEventRepository.save(entity);
     }
 
+    private String normalizeStrategy(String strategy) {
+        if (strategy == null || strategy.isBlank()) {
+            return DEFAULT_STRATEGY;
+        }
+        return strategy.strip().toLowerCase();
+    }
+
+    private String normalizeSource(String source) {
+        if (source == null || source.isBlank()) {
+            return DEFAULT_SOURCE;
+        }
+        return source.strip().toLowerCase();
+    }
+
+    private int sanitizeCount(Integer count, int fallback) {
+        if (count == null || count < 0) {
+            return fallback;
+        }
+        return count;
+    }
+
     private String toSnippet(String content) {
         if (content == null || content.isBlank()) {
             return "";
@@ -66,4 +107,8 @@ public class RetrievalEventService {
         }
         return normalized.substring(0, MAX_SNIPPET_CHARS);
     }
+
+    public record RetrievalMeta(String strategy, Integer vectorHitCount, Integer bm25HitCount, Integer finalHitCount) {}
+
+    public record RetrievalResultHit(Bm25RetrieverService.RetrievalHit hit, String source) {}
 }

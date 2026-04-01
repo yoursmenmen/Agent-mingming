@@ -19,6 +19,10 @@
 - 查询历史事件：`GET /api/runs/{runId}/events`
 - 简单鉴权：除 `/health` 与 `/actuator/**` 外，均要求 `Authorization: Bearer <token>`
 - Skills/Tools：demo `now`、`add`（基于 `@Tool`）
+- RAG（docs）：
+  - markdown 分片 + BM25 检索
+  - pgvector 向量检索 + 混合召回（vector + BM25）
+  - 通过 `RETRIEVAL_RESULT` 事件做检索可观测
 - MCP：配置读取 + API 骨架（`/api/mcp/servers`、`/api/mcp/tools` 目前是占位）
 
 前端：
@@ -62,6 +66,12 @@ cd backend
 # 必填
 export AI_DASHSCOPE_API_KEY="<你的key>"
 export AGENT_API_TOKEN="dev-token-change-me"
+
+# 向量 RAG（IDEA 从项目根目录运行时推荐）
+export AGENT_RAG_VECTOR_ENABLED="true"
+export AGENT_RAG_VECTOR_DOCS_ROOT="docs"
+export AGENT_RAG_VECTOR_EMBEDDING_MODEL="text-embedding-v3"
+export AGENT_RAG_VECTOR_EMBEDDING_VERSION="2026-03"
 
 # 可选：覆盖数据库连接（默认就是 localhost:5432/agentdb）
 # export DB_URL="jdbc:postgresql://localhost:5432/agentdb"
@@ -110,6 +120,8 @@ npm run dev
 - 当前 SSE 接口是 **POST /api/chat/stream**。浏览器原生 `EventSource` **只支持 GET**。
   - 前端会采用 `fetch()` + ReadableStream 读取并解析 SSE（推荐）
   - 或者后端改造为 GET（需要重新设计 message 的传参方式）
+- 向量索引同步在启动后异步执行；如果 `docsRoot` 配错，`doc_chunk`/`doc_chunk_embedding` 会保持为空。
+- `AGENT_RAG_VECTOR_DOCS_ROOT` 是相对进程工作目录解析：IDEA 在项目根运行建议 `docs`；在 backend 目录运行建议 `../docs`。
 
 ## 文档入口
 

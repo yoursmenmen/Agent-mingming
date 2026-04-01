@@ -265,3 +265,39 @@ Flyway migrations：
   - `RetrievalEventServiceTest`
 - 更新 `AgentOrchestratorTest`，补充检索事件 seq 与 prompt 注入断言。
 - 新增 `docs/rag-fixtures/` 夹具文档（`architecture-long.md`、`release-notes.md`、`noise.md`）用于检索与展示场景验证。
+
+## 12) 2026-03-30 迭代（Vector Stage Task 5：启动异步同步）
+
+### 启动阶段异步同步组件
+- 新增 `backend/src/main/java/com/mingming/agent/rag/VectorRagBootstrapSync.java`：
+  - 监听 `ApplicationReadyEvent`。
+  - 在 `agent.rag.vector.enabled=true` 时，通过 `TaskExecutor` 异步执行向量分块同步。
+  - 记录同步完成统计日志（inserted/updated/softDeleted/unchanged）。
+  - 同步异常仅告警，不中断应用启动流程。
+
+### 测试覆盖补齐
+- 更新 `backend/src/test/java/com/mingming/agent/rag/VectorRagBootstrapSyncTest.java`：
+  - 保留启用/禁用分支验证。
+  - 新增异常分支验证：后台同步抛错时不向外传播异常，且同步调用仍被触发。
+
+### 实施报告
+- 新增 `docs/superpowers/reports/2026-03-30-vector-rag-implementation-report.md`，记录 Task 5 实施内容与全量验证结果摘要。
+
+## 13) 2026-03-31 迭代（Vector RAG 主链路完成 + 维度对齐）
+
+### 向量检索与混合召回主链路
+- 新增向量持久化模型与迁移：`doc_chunk` / `doc_chunk_embedding`（pgvector）。
+- 新增增量同步服务：按 `content_hash + embedding_model + embedding_version` 判定更新，执行 upsert + 软删除。
+- 新增 `VectorRetrieverService` 与 `HybridRetrievalService`：支持向量召回 + BM25 融合（RRF）及异常降级。
+- `AgentOrchestrator` 接入 hybrid 检索，检索事件扩展为可观测元数据。
+
+### 可观测性与前端时间线
+- `RETRIEVAL_RESULT` 事件新增 `strategy/vectorHitCount/bm25HitCount/finalHitCount`。
+- 前端 `eventMapper` 增加混合检索摘要展示，并兼容旧 payload。
+
+### 真实 Embedding 接入与维度修复
+- 向量生成从“伪向量”切换为 Spring AI `EmbeddingModel.embed(...)`。
+- 发现 DashScope 当前返回 1024 维后，新增迁移 `V4__vector_dimension_1024.sql`：
+  - 将向量列改为 `vector(1024)`
+  - 清理旧维度 embedding 并重建向量索引
+- 同步更新检索与同步服务的维度校验及测试断言。

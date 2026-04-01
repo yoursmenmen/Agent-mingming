@@ -13,6 +13,10 @@ Backend:
 - **Run events query**: `GET /api/runs/{runId}/events`
 - **Simple auth**: `Authorization: Bearer <token>` (except `/health` and `/actuator/**`)
 - **Skills** (tools): demo `now`, `add` via `@Tool`
+- **RAG (docs)**:
+  - markdown chunking + BM25 retrieval
+  - pgvector vector retrieval + hybrid fusion (vector + BM25)
+  - retrieval observability via `RETRIEVAL_RESULT` run event
 - **MCP**: config + API skeleton (`/api/mcp/servers`, `/api/mcp/tools` placeholder)
 
 Frontend:
@@ -58,6 +62,12 @@ cd backend
 export AI_DASHSCOPE_API_KEY="<your_key>"
 export AGENT_API_TOKEN="dev-token-change-me"
 export AMAP_WEATHER_API_KEY="<your_amap_key>"
+
+# RAG vector (recommended for IDEA run from project root)
+export AGENT_RAG_VECTOR_ENABLED="true"
+export AGENT_RAG_VECTOR_DOCS_ROOT="docs"
+export AGENT_RAG_VECTOR_EMBEDDING_MODEL="text-embedding-v3"
+export AGENT_RAG_VECTOR_EMBEDDING_VERSION="2026-03"
 
 # optional override
 # export DB_URL="jdbc:postgresql://localhost:5432/agentdb"
@@ -106,6 +116,8 @@ npm run dev
 
 - `POST /api/chat/stream` is SSE over POST. Browser native `EventSource` only supports GET.
   - Frontend will use `fetch()` + ReadableStream parsing (recommended) or we can switch backend to GET.
+- Vector bootstrap sync runs asynchronously after startup. If `docsRoot` is wrong, `doc_chunk`/`doc_chunk_embedding` may stay empty.
+- `AGENT_RAG_VECTOR_DOCS_ROOT` is resolved from process working directory. In IDEA project-root run, use `docs`; in backend-directory run, use `../docs`.
 
 ## Documentation
 

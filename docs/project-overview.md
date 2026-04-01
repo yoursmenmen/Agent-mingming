@@ -25,7 +25,7 @@ Agent_mm/
 3. 调用 **`POST /api/chat/stream`** 获取 SSE 事件流（包含 runId 与模型输出事件）。
 4. 通过 **`GET /api/runs/{runId}/events`** 查询已落库的 run events，用于回放与排查。
 
-## 当前进度（2026-03-29 下班版）
+## 当前进度（2026-03-31 向量阶段）
 
 ### 已完成（核心链路）
 - 会话复用：支持 `sessionId` 续聊，同会话多 run。
@@ -41,17 +41,25 @@ Agent_mm/
 - 工具面板独立展示 `/api/tools`，避免状态面板信息拥挤。
 - 时间线按会话维度查看历史事件。
 
+### 已完成（RAG 能力）
+- docs 检索增强：`docs/**/*.md` 分片并接入 BM25 检索。
+- 向量检索：基于 PostgreSQL `pgvector` 存储 embedding。
+- 混合召回：支持 vector + BM25 融合并输出最终 topN。
+- 增量同步：按 `content_hash + embedding_model + embedding_version` 判定更新，采用 upsert + 软删除。
+- 非阻塞启动：向量同步在应用启动后后台异步执行。
+- 可观测性：`RETRIEVAL_RESULT` 事件包含 `strategy/vectorHitCount/bm25HitCount/finalHitCount` 与命中来源。
+
 ## 下一阶段计划（不含显式 loop）
 
-1. **结构化输出标准化（优先）**
-   - 将当前天气 `structured` 扩展为统一响应协议（如 `schema/version/type/data`）。
-   - 前端按结构化字段做专用渲染卡片，而非仅文本。
+1. **向量 RAG 稳定化**
+   - 完成真实 embedding 模型维度对齐与迁移治理（当前按 1024 维）。
+   - 加强 docsRoot 诊断与同步状态可视化，降低“库为空无报错”排查成本。
 
-2. **RAG 最小闭环**
-   - 先用项目文档（`docs/`）作为知识源，接入检索增强回答。
-   - 在时间线中增加检索事件（如命中片段摘要），便于学习可观测性。
+2. **多知识源接入**
+   - 在 docs 之外引入外部文档源（URL/目录），沿用增量同步策略。
+   - 按 source 维度做召回分层与去重。
 
-3. **工具治理与可观测性增强**
+3. **工具治理与可观测性增强（继续）**
    - 增加工具超时/失败分类与友好错误。
    - 补充关键指标（调用次数、失败率、平均耗时）展示到控制台。
 
