@@ -66,11 +66,59 @@ function summarizeRetrievalPayload(payload: unknown): string | null {
   return `未命中 | ${countDetails} | 查询: ${query} | 首条来源: ${firstHitSource} | 代表文档: ${representativeDocPath}`
 }
 
+function summarizeRagSyncPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+
+  const ragPayload = payload as {
+    phase?: unknown
+    trigger?: unknown
+    error?: unknown
+    stats?: {
+      inserted?: unknown
+      updated?: unknown
+      softDeleted?: unknown
+      unchanged?: unknown
+    }
+  }
+
+  const phase = typeof ragPayload.phase === 'string' && ragPayload.phase.trim().length > 0 ? ragPayload.phase : 'unknown'
+  const trigger = typeof ragPayload.trigger === 'string' && ragPayload.trigger.trim().length > 0 ? ragPayload.trigger : 'unknown'
+  const stats = ragPayload.stats && typeof ragPayload.stats === 'object' ? ragPayload.stats : {}
+  const inserted = typeof stats.inserted === 'number' && Number.isFinite(stats.inserted) ? stats.inserted : 0
+  const updated = typeof stats.updated === 'number' && Number.isFinite(stats.updated) ? stats.updated : 0
+  const softDeleted = typeof stats.softDeleted === 'number' && Number.isFinite(stats.softDeleted) ? stats.softDeleted : 0
+  const unchanged = typeof stats.unchanged === 'number' && Number.isFinite(stats.unchanged) ? stats.unchanged : 0
+  const error = typeof ragPayload.error === 'string' ? ragPayload.error : ''
+
+  if (phase === 'failed') {
+    return `RAG 同步失败 | 触发: ${trigger} | 原因: ${error || '未知错误'}`
+  }
+
+  if (phase === 'completed') {
+    return `RAG 同步完成 | 触发: ${trigger} | 新增: ${inserted} | 更新: ${updated} | 软删除: ${softDeleted} | 未变更: ${unchanged}`
+  }
+
+  if (phase === 'started') {
+    return `RAG 同步开始 | 触发: ${trigger}`
+  }
+
+  return `RAG 同步事件 | 阶段: ${phase} | 触发: ${trigger}`
+}
+
 export function summarizePayload(payload: unknown, eventType?: string): string {
   if (eventType === 'RETRIEVAL_RESULT') {
     const retrievalSummary = summarizeRetrievalPayload(payload)
     if (retrievalSummary) {
       return retrievalSummary
+    }
+  }
+
+  if (eventType === 'RAG_SYNC') {
+    const ragSyncSummary = summarizeRagSyncPayload(payload)
+    if (ragSyncSummary) {
+      return ragSyncSummary
     }
   }
 

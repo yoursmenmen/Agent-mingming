@@ -5,6 +5,7 @@ public enum RunEventType {
     MODEL_DELTA,
     MODEL_MESSAGE,
     RETRIEVAL_RESULT,
+    RAG_SYNC,
     TOOL_CALL,
     TOOL_RESULT,
     ERROR

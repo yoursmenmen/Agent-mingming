@@ -1,10 +1,10 @@
 import { computed, onMounted, ref } from 'vue'
-import { fetchRunEvents, fetchSessionEvents, fetchTools, postChatStream } from '../services/api'
+import { fetchRagDocuments, fetchRagSources, fetchRagSyncStatus, fetchRunEvents, fetchSessionEvents, fetchTools, postChatStream, triggerRagSync } from '../services/api'
 import { createStreamTimelineItem, mapRunEventToTimelineItem, mergeTimelineItems } from '../services/eventMapper'
 import { parseStructuredPayload } from '../services/structured'
 import { consumeSseStream } from '../services/sse'
 import type { ChatMessage, StreamErrorEvent, StreamMessageEvent, StreamRunEvent } from '../types/chat'
-import type { RunEventItem, RunStatus, TimelineItem, ToolInfo } from '../types/run'
+import type { RagDocuments, RagSourceInfo, RagSyncStatus, RunEventItem, RunStatus, TimelineItem, ToolInfo } from '../types/run'
 
 type ModelMessagePayload = {
   content?: unknown
@@ -45,7 +45,12 @@ export function useChatConsole() {
   const historyItems = ref<TimelineItem[]>([])
   const errorMessage = ref('')
   const availableTools = ref<ToolInfo[]>([])
+  const ragSyncStatus = ref<RagSyncStatus | null>(null)
+  const ragSources = ref<RagSourceInfo[]>([])
+  const ragDocuments = ref<RagDocuments>({ localDocs: [], urlDocs: [] })
   const isRefreshing = ref(false)
+  const isRagRefreshing = ref(false)
+  const isRagTriggering = ref(false)
   const activeAssistantId = ref<string | null>(null)
   const streamSeq = ref(1)
 
@@ -257,8 +262,42 @@ export function useChatConsole() {
     }
   }
 
+  async function refreshRagStatus() {
+    isRagRefreshing.value = true
+    try {
+      const [status, sources, documents] = await Promise.all([fetchRagSyncStatus(), fetchRagSources(), fetchRagDocuments()])
+      ragSyncStatus.value = status
+      ragSources.value = sources
+      ragDocuments.value = documents
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : '获取 RAG 状态失败'
+    } finally {
+      isRagRefreshing.value = false
+    }
+  }
+
+  async function triggerRagSyncNow() {
+    if (isRagTriggering.value) {
+      return
+    }
+    isRagTriggering.value = true
+    try {
+      const result = await triggerRagSync()
+      ragSyncStatus.value = result.status
+      await refreshRagStatus()
+      if (!result.accepted) {
+        errorMessage.value = 'RAG 同步未被接受，可能有任务正在执行'
+      }
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : '触发 RAG 同步失败'
+    } finally {
+      isRagTriggering.value = false
+    }
+  }
+
   onMounted(() => {
     void refreshTools()
+    void refreshRagStatus()
   })
 
   function formatTime(value: string): string {
@@ -278,12 +317,19 @@ export function useChatConsole() {
     timelineItems,
     timelineCount,
     availableTools,
+    ragSyncStatus,
+    ragSources,
+    ragDocuments,
     statusLabel,
     errorMessage,
     isRefreshing,
+    isRagRefreshing,
+    isRagTriggering,
     sendMessage,
     refreshRunEvents,
     refreshTools,
+    refreshRagStatus,
+    triggerRagSyncNow,
     formatTime,
   }
 }

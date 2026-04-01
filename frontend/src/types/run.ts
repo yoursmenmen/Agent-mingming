@@ -24,3 +24,30 @@ export interface ToolInfo {
   description: string
   source: string
 }
+
+export interface RagSyncStatus {
+  state: string
+  lastStartAt: string | null
+  lastSuccessAt: string | null
+  lastError: string | null
+  chunkCount: number
+  embeddingCount: number
+  sourceStats: {
+    localDocs: number
+    urlSources: number
+  }
+}
+
+export interface RagSourceInfo {
+  name: string
+  url: string
+  enabled: boolean
+  lastStatus: string
+  lastCheckedAt: string | null
+  lastError: string | null
+}
+
+export interface RagDocuments {
+  localDocs: string[]
+  urlDocs: string[]
+}

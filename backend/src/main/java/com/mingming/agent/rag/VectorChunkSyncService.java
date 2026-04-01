@@ -2,6 +2,7 @@ package com.mingming.agent.rag;
 
 import com.mingming.agent.entity.DocChunkEmbeddingEntity;
 import com.mingming.agent.entity.DocChunkEntity;
+import com.mingming.agent.rag.source.UrlSourceIngestionService;
 import com.mingming.agent.repository.DocChunkEmbeddingRepository;
 import com.mingming.agent.repository.DocChunkRepository;
 import java.nio.file.Path;
@@ -19,6 +20,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,18 +34,24 @@ public class VectorChunkSyncService {
     private final DocChunkEmbeddingRepository embeddingRepository;
     private final VectorRagProperties properties;
     private final EmbeddingModel embeddingModel;
+    private final UrlSourceIngestionService urlSourceIngestionService;
+    private final boolean localDocsEnabled;
 
     public VectorChunkSyncService(
             DocsChunkingService docsChunkingService,
             DocChunkRepository docChunkRepository,
             DocChunkEmbeddingRepository embeddingRepository,
             VectorRagProperties properties,
-            EmbeddingModel embeddingModel) {
+            EmbeddingModel embeddingModel,
+            UrlSourceIngestionService urlSourceIngestionService,
+            @Value("${agent.rag.sources.localDocs.enabled:true}") boolean localDocsEnabled) {
         this.docsChunkingService = docsChunkingService;
         this.docChunkRepository = docChunkRepository;
         this.embeddingRepository = embeddingRepository;
         this.properties = properties;
         this.embeddingModel = embeddingModel;
+        this.urlSourceIngestionService = urlSourceIngestionService;
+        this.localDocsEnabled = localDocsEnabled;
     }
 
     public record SyncSummary(int inserted, int updated, int softDeleted, int unchanged) {}
@@ -57,26 +65,31 @@ public class VectorChunkSyncService {
         String model = properties.getEmbeddingModel();
         String version = properties.getEmbeddingVersion();
 
-        List<DocsChunk> sourceChunks = docsChunkingService.loadChunks(docsRoot);
-        Map<String, List<DocsChunk>> chunksByDocPath = sourceChunks.stream()
-                .sorted(Comparator.comparing(DocsChunk::docPath).thenComparing(DocsChunk::chunkId))
-                .collect(Collectors.groupingBy(DocsChunk::docPath, TreeMap::new, Collectors.toList()));
-        Set<String> incomingDocPaths = chunksByDocPath.keySet();
+        List<DocsChunk> sourceChunks = new java.util.ArrayList<>();
+        if (localDocsEnabled) {
+            sourceChunks.addAll(docsChunkingService.loadChunks(docsRoot));
+        }
+        sourceChunks.addAll(urlSourceIngestionService.loadChunks());
 
-        Map<String, List<DocChunkEntity>> activeChunksByDocPath = docChunkRepository.findByDeletedFalse().stream()
-                .sorted(Comparator.comparing(DocChunkEntity::getDocPath).thenComparing(DocChunkEntity::getChunkId))
-                .collect(Collectors.groupingBy(DocChunkEntity::getDocPath, TreeMap::new, Collectors.toList()));
+        Map<String, List<DocsChunk>> chunksByScope = sourceChunks.stream()
+                .sorted(Comparator.comparing(this::chunkScopeKey).thenComparing(DocsChunk::chunkId))
+                .collect(Collectors.groupingBy(this::chunkScopeKey, TreeMap::new, Collectors.toList()));
+        Set<String> incomingScopes = chunksByScope.keySet();
+
+        Map<String, List<DocChunkEntity>> activeChunksByScope = docChunkRepository.findByDeletedFalse().stream()
+                .sorted(Comparator.comparing(this::entityScopeKey).thenComparing(DocChunkEntity::getChunkId))
+                .collect(Collectors.groupingBy(this::entityScopeKey, TreeMap::new, Collectors.toList()));
 
         int inserted = 0;
         int updated = 0;
         int softDeleted = 0;
         int unchanged = 0;
 
-        for (Map.Entry<String, List<DocsChunk>> entry : chunksByDocPath.entrySet()) {
-            String docPath = entry.getKey();
+        for (Map.Entry<String, List<DocsChunk>> entry : chunksByScope.entrySet()) {
             List<DocsChunk> docChunks = entry.getValue();
+            DocsChunk firstChunk = docChunks.get(0);
 
-            List<DocChunkEntity> existingEntities = docChunkRepository.findByDocPath(docPath);
+            List<DocChunkEntity> existingEntities = docChunkRepository.findBySourceIdAndDocPath(firstChunk.sourceId(), firstChunk.docPath());
             Map<String, DocChunkEntity> existingByChunkId = existingEntities.stream()
                     .collect(Collectors.toMap(DocChunkEntity::getChunkId, entity -> entity, (left, right) -> left, LinkedHashMap::new));
 
@@ -123,8 +136,8 @@ public class VectorChunkSyncService {
             }
         }
 
-        for (Map.Entry<String, List<DocChunkEntity>> entry : activeChunksByDocPath.entrySet()) {
-            if (incomingDocPaths.contains(entry.getKey())) {
+        for (Map.Entry<String, List<DocChunkEntity>> entry : activeChunksByScope.entrySet()) {
+            if (incomingScopes.contains(entry.getKey())) {
                 continue;
             }
             List<DocChunkEntity> activeChunks = entry.getValue().stream()
@@ -154,6 +167,12 @@ public class VectorChunkSyncService {
         if (!Objects.equals(existing.getContentHash(), incomingHash)) {
             return true;
         }
+        if (!Objects.equals(existing.getSourceType(), incoming.sourceType())) {
+            return true;
+        }
+        if (!Objects.equals(existing.getSourceId(), incoming.sourceId())) {
+            return true;
+        }
         return !Objects.equals(existing.getContent(), incoming.content());
     }
 
@@ -171,8 +190,21 @@ public class VectorChunkSyncService {
         target.setHeadingPath(source.headingPath());
         target.setContent(source.content());
         target.setContentHash(contentHash);
+        target.setSourceType(source.sourceType());
+        target.setSourceId(source.sourceId());
         target.setDeleted(deleted);
         target.setUpdatedAt(OffsetDateTime.now());
+    }
+
+    private String chunkScopeKey(DocsChunk chunk) {
+        return chunk.sourceId() + "|" + chunk.docPath();
+    }
+
+    private String entityScopeKey(DocChunkEntity chunk) {
+        String sourceId = chunk.getSourceId() == null || chunk.getSourceId().isBlank()
+                ? "local:" + chunk.getDocPath()
+                : chunk.getSourceId();
+        return sourceId + "|" + chunk.getDocPath();
     }
 
     private void upsertEmbedding(DocsChunk chunk, String model, String version) {

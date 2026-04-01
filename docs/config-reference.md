@@ -13,6 +13,12 @@
 | `AGENT_RAG_VECTOR_DOCS_ROOT` | docs 扫描根目录（相对进程工作目录） | `docs` / `../docs` |
 | `AGENT_RAG_VECTOR_EMBEDDING_MODEL` | 向量模型标识（用于 embedding 生成与过滤） | `text-embedding-v3` |
 | `AGENT_RAG_VECTOR_EMBEDDING_VERSION` | 向量版本标识（用于增量更新判定） | `2026-03` |
+| `AGENT_RAG_SOURCE_LOCAL_DOCS_ENABLED` | 是否启用本地 docs 作为知识源 | `true` |
+| `AGENT_RAG_SOURCE_URL_ENABLED` | 是否启用 URL 知识源 | `false` |
+| `AGENT_RAG_SOURCE_URL_MAX_IN_MEMORY_SIZE_BYTES` | URL 抓取 WebClient 最大内存缓冲（字节） | `4194304` |
+| `AGENT_RAG_SYNC_SCHEDULER_ENABLED` | 是否启用定时同步任务 | `false` |
+| `AGENT_RAG_SYNC_SCHEDULER_CRON` | 定时同步 cron 表达式 | `0 0 3 ? * SUN` |
+| `AGENT_RAG_SYNC_SCHEDULER_ZONE` | 定时同步时区 | `Asia/Shanghai` |
 
 ## `backend/src/main/resources/application.yml`
 
@@ -23,6 +29,33 @@
 - `agent.rag.vector.docsRoot`：文档扫描根目录
 - `agent.rag.vector.embeddingModel`：向量模型标识
 - `agent.rag.vector.embeddingVersion`：向量版本标识
+- `agent.rag.sources.localDocs.enabled`：本地 docs 源开关
+- `agent.rag.sources.url.enabled`：URL 源总开关
+- `agent.rag.sources.url.maxInMemorySizeBytes`：URL 抓取响应最大缓冲大小（默认 4MB）
+- `agent.rag.sources.url.items[]`：URL 源列表（`name/url/enabled`）
+- `agent.rag.sync.scheduler.enabled`：定时同步开关
+- `agent.rag.sync.scheduler.cron`：定时同步 cron
+- `agent.rag.sync.scheduler.zone`：定时同步时区
+
+示例：
+
+```yaml
+agent:
+  rag:
+    sources:
+      url:
+        enabled: true
+        items:
+          - name: spring-docs
+            url: https://docs.spring.io/spring-ai/reference/index.html
+            enabled: true
+```
+
+## RAG 同步接口
+
+- `GET /api/rag/sync/status`：查看同步状态、统计和最近错误。
+- `POST /api/rag/sync/trigger`：手动触发一次同步，返回 `accepted` 与最新状态快照。
+- `GET /api/rag/sources`：查看 URL 源配置与每个源最近同步状态。
 
 ## 向量维度与迁移说明
 

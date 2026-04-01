@@ -25,7 +25,7 @@ Agent_mm/
 3. 调用 **`POST /api/chat/stream`** 获取 SSE 事件流（包含 runId 与模型输出事件）。
 4. 通过 **`GET /api/runs/{runId}/events`** 查询已落库的 run events，用于回放与排查。
 
-## 当前进度（2026-03-31 向量阶段）
+## 当前进度（2026-04-01 同步可观测阶段）
 
 ### 已完成（核心链路）
 - 会话复用：支持 `sessionId` 续聊，同会话多 run。
@@ -48,6 +48,10 @@ Agent_mm/
 - 增量同步：按 `content_hash + embedding_model + embedding_version` 判定更新，采用 upsert + 软删除。
 - 非阻塞启动：向量同步在应用启动后后台异步执行。
 - 可观测性：`RETRIEVAL_RESULT` 事件包含 `strategy/vectorHitCount/bm25HitCount/finalHitCount` 与命中来源。
+- 同步状态接口：新增 `GET /api/rag/sync/status` 与 `POST /api/rag/sync/trigger`。
+- 同步生命周期：状态流转为 `running -> completed/failed`，并输出 `RAG_SYNC` 生命周期事件（started/completed/failed）。
+- 多知识源接入：新增 URL source ingestion，可将外部 URL 内容纳入同一 chunk + embedding + hybrid 检索链路。
+- source 维度扩展：`doc_chunk` 新增 `source_type/source_id` 字段，支持 `local_docs|url` 源区分。
 
 ## 下一阶段计划（不含显式 loop）
 
@@ -56,8 +60,8 @@ Agent_mm/
    - 加强 docsRoot 诊断与同步状态可视化，降低“库为空无报错”排查成本。
 
 2. **多知识源接入**
-   - 在 docs 之外引入外部文档源（URL/目录），沿用增量同步策略。
-   - 按 source 维度做召回分层与去重。
+   - 在 docs 之外继续扩展外部文档源（URL 已接入，后续可接目录/API）。
+   - 按 source 维度做召回分层、过滤与去重。
 
 3. **工具治理与可观测性增强（继续）**
    - 增加工具超时/失败分类与友好错误。

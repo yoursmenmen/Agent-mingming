@@ -32,6 +32,12 @@ public class DocChunkEntity {
     @Column(name = "content_hash", nullable = false, length = 128)
     private String contentHash;
 
+    @Column(name = "source_type", nullable = false, length = 64)
+    private String sourceType;
+
+    @Column(name = "source_id", nullable = false, length = 256)
+    private String sourceId;
+
     @Column(name = "is_deleted", nullable = false)
     private boolean deleted;
 

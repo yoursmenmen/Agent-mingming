@@ -80,4 +80,61 @@ describe('mapRunEventToTimelineItem', () => {
     expect(item.summary).toContain('首条来源: N/A')
     expect(item.summary).toContain('docs/legacy.md')
   })
+
+  it('builds rag sync summary for started and completed phases', () => {
+    const started = mapRunEventToTimelineItem({
+      id: 'evt-sync-1',
+      runId: 'run-1',
+      seq: 5,
+      createdAt: '2026-04-01T10:00:04Z',
+      type: 'RAG_SYNC',
+      payload: JSON.stringify({
+        phase: 'started',
+        trigger: 'manual',
+      }),
+    })
+
+    const completed = mapRunEventToTimelineItem({
+      id: 'evt-sync-2',
+      runId: 'run-1',
+      seq: 6,
+      createdAt: '2026-04-01T10:00:05Z',
+      type: 'RAG_SYNC',
+      payload: JSON.stringify({
+        phase: 'completed',
+        trigger: 'manual',
+        stats: {
+          inserted: 3,
+          updated: 2,
+          softDeleted: 1,
+          unchanged: 4,
+        },
+      }),
+    })
+
+    expect(started.summary).toContain('RAG 同步开始')
+    expect(started.summary).toContain('触发: manual')
+    expect(completed.summary).toContain('RAG 同步完成')
+    expect(completed.summary).toContain('新增: 3')
+    expect(completed.summary).toContain('更新: 2')
+  })
+
+  it('builds rag sync failed summary with error', () => {
+    const failed = mapRunEventToTimelineItem({
+      id: 'evt-sync-3',
+      runId: 'run-1',
+      seq: 7,
+      createdAt: '2026-04-01T10:00:06Z',
+      type: 'RAG_SYNC',
+      payload: JSON.stringify({
+        phase: 'failed',
+        trigger: 'bootstrap',
+        error: 'network timeout',
+      }),
+    })
+
+    expect(failed.summary).toContain('RAG 同步失败')
+    expect(failed.summary).toContain('触发: bootstrap')
+    expect(failed.summary).toContain('network timeout')
+  })
 })

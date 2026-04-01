@@ -10,11 +10,15 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 public class RetrievalEventService {
+
+    private static final Logger log = LoggerFactory.getLogger(RetrievalEventService.class);
 
     private static final int MAX_SNIPPET_CHARS = 200;
     private static final String DEFAULT_STRATEGY = "hybrid";
@@ -71,6 +75,39 @@ public class RetrievalEventService {
         entity.setRunId(runId);
         entity.setSeq(seq);
         entity.setType(RunEventType.RETRIEVAL_RESULT.name());
+        entity.setCreatedAt(OffsetDateTime.now());
+        entity.setPayload(payload.toString());
+        runEventRepository.save(entity);
+    }
+
+    public void recordRagSync(
+            UUID runId,
+            int seq,
+            String phase,
+            String trigger,
+            VectorChunkSyncService.SyncSummary summary,
+            String errorMessage) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("phase", phase == null ? "unknown" : phase);
+        payload.put("trigger", trigger == null ? "unknown" : trigger);
+        payload.put("error", errorMessage == null ? "" : errorMessage);
+
+        ObjectNode stats = payload.putObject("stats");
+        stats.put("inserted", summary == null ? 0 : summary.inserted());
+        stats.put("updated", summary == null ? 0 : summary.updated());
+        stats.put("softDeleted", summary == null ? 0 : summary.softDeleted());
+        stats.put("unchanged", summary == null ? 0 : summary.unchanged());
+
+        if (runId == null || seq <= 0) {
+            log.info("RAG_SYNC event: {}", payload);
+            return;
+        }
+
+        RunEventEntity entity = new RunEventEntity();
+        entity.setId(UUID.randomUUID());
+        entity.setRunId(runId);
+        entity.setSeq(seq);
+        entity.setType(RunEventType.RAG_SYNC.name());
         entity.setCreatedAt(OffsetDateTime.now());
         entity.setPayload(payload.toString());
         runEventRepository.save(entity);

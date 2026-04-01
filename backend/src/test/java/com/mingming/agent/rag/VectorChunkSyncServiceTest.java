@@ -11,6 +11,7 @@ import static org.mockito.Mockito.times;
 
 import com.mingming.agent.entity.DocChunkEmbeddingEntity;
 import com.mingming.agent.entity.DocChunkEntity;
+import com.mingming.agent.rag.source.UrlSourceIngestionService;
 import com.mingming.agent.repository.DocChunkEmbeddingRepository;
 import com.mingming.agent.repository.DocChunkRepository;
 import java.nio.charset.StandardCharsets;
@@ -31,12 +32,13 @@ class VectorChunkSyncServiceTest {
     private final DocChunkRepository docChunkRepository = Mockito.mock(DocChunkRepository.class);
     private final DocChunkEmbeddingRepository embeddingRepository = Mockito.mock(DocChunkEmbeddingRepository.class);
     private final EmbeddingModel embeddingModel = Mockito.mock(EmbeddingModel.class);
+    private final UrlSourceIngestionService urlSourceIngestionService = Mockito.mock(UrlSourceIngestionService.class);
 
     @Test
     void sync_shouldInsertNewChunkAndEmbedding() {
         when(docsChunkingService.loadChunks(Path.of("docs")))
                 .thenReturn(List.of(new DocsChunk("c1", "docs/a.md", "A", "new content", 8)));
-        when(docChunkRepository.findByDocPath("docs/a.md")).thenReturn(List.of());
+        when(docChunkRepository.findBySourceIdAndDocPath("local:docs/a.md", "docs/a.md")).thenReturn(List.of());
 
         VectorChunkSyncService service = newService("text-embedding-v3", "2026-03");
 
@@ -63,7 +65,7 @@ class VectorChunkSyncServiceTest {
         when(docsChunkingService.loadChunks(Path.of("docs"))).thenReturn(List.of(changed));
 
         DocChunkEntity existing = chunkEntity("c1", "docs/a.md", "A", "old", "old-hash", false);
-        when(docChunkRepository.findByDocPath("docs/a.md")).thenReturn(List.of(existing));
+        when(docChunkRepository.findBySourceIdAndDocPath("local:docs/a.md", "docs/a.md")).thenReturn(List.of(existing));
 
         VectorChunkSyncService service = newService("text-embedding-v3", "2026-03");
 
@@ -86,7 +88,7 @@ class VectorChunkSyncServiceTest {
         when(docsChunkingService.loadChunks(Path.of("docs"))).thenReturn(List.of(same));
 
         DocChunkEntity existingChunk = chunkEntity("c1", "docs/a.md", "A", "same", hashOf("same"), false);
-        when(docChunkRepository.findByDocPath("docs/a.md")).thenReturn(List.of(existingChunk));
+        when(docChunkRepository.findBySourceIdAndDocPath("local:docs/a.md", "docs/a.md")).thenReturn(List.of(existingChunk));
 
         DocChunkEmbeddingEntity existingEmbedding = new DocChunkEmbeddingEntity();
         existingEmbedding.setChunkId("c1");
@@ -110,7 +112,7 @@ class VectorChunkSyncServiceTest {
 
         DocChunkEntity kept = chunkEntity("c1", "docs/a.md", "A", "stay", hashOf("stay"), false);
         DocChunkEntity removed = chunkEntity("c2", "docs/a.md", "A", "gone", "hash-gone", false);
-        when(docChunkRepository.findByDocPath("docs/a.md")).thenReturn(List.of(kept, removed));
+        when(docChunkRepository.findBySourceIdAndDocPath("local:docs/a.md", "docs/a.md")).thenReturn(List.of(kept, removed));
 
         VectorChunkSyncService service = newService("text-embedding-v3", "2026-03");
 
@@ -130,7 +132,7 @@ class VectorChunkSyncServiceTest {
                 .thenReturn(List.of(new DocsChunk("c1", "docs/a.md", "A", "same", 4)));
 
         DocChunkEntity existingChunk = chunkEntity("c1", "docs/a.md", "A", "same", hashOf("same"), false);
-        when(docChunkRepository.findByDocPath("docs/a.md")).thenReturn(List.of(existingChunk));
+        when(docChunkRepository.findBySourceIdAndDocPath("local:docs/a.md", "docs/a.md")).thenReturn(List.of(existingChunk));
 
         DocChunkEmbeddingEntity existingEmbedding = new DocChunkEmbeddingEntity();
         existingEmbedding.setChunkId("c1");
@@ -176,7 +178,7 @@ class VectorChunkSyncServiceTest {
     void sync_shouldGenerateFixed1024DimensionEmbedding() {
         when(docsChunkingService.loadChunks(Path.of("docs")))
                 .thenReturn(List.of(new DocsChunk("c-fixed", "docs/fixed.md", "H", "content", 4)));
-        when(docChunkRepository.findByDocPath("docs/fixed.md")).thenReturn(List.of());
+        when(docChunkRepository.findBySourceIdAndDocPath("local:docs/fixed.md", "docs/fixed.md")).thenReturn(List.of());
 
         VectorChunkSyncService service = newService("text-embedding-v3", "2026-03");
 
@@ -195,7 +197,15 @@ class VectorChunkSyncServiceTest {
         properties.setEmbeddingModel(embeddingModel);
         properties.setEmbeddingVersion(embeddingVersion);
         when(this.embeddingModel.embed(anyString())).thenReturn(unitEmbedding());
-        return new VectorChunkSyncService(docsChunkingService, docChunkRepository, embeddingRepository, properties, this.embeddingModel);
+        when(urlSourceIngestionService.loadChunks()).thenReturn(List.of());
+        return new VectorChunkSyncService(
+                docsChunkingService,
+                docChunkRepository,
+                embeddingRepository,
+                properties,
+                this.embeddingModel,
+                urlSourceIngestionService,
+                true);
     }
 
     private float[] unitEmbedding() {
@@ -214,6 +224,8 @@ class VectorChunkSyncServiceTest {
         entity.setHeadingPath(headingPath);
         entity.setContent(content);
         entity.setContentHash(contentHash);
+        entity.setSourceType("local_docs");
+        entity.setSourceId("local:" + docPath);
         entity.setDeleted(deleted);
         entity.setUpdatedAt(OffsetDateTime.now());
         return entity;

@@ -39,3 +39,27 @@ agent:
       docsRoot: ${AGENT_RAG_VECTOR_DOCS_ROOT:../docs}
       embeddingModel: ${AGENT_RAG_VECTOR_EMBEDDING_MODEL:text-embedding-v3}
       embeddingVersion: ${AGENT_RAG_VECTOR_EMBEDDING_VERSION:2026-03}
+    sources:
+      localDocs:
+        enabled: true
+      url:
+        enabled: true
+        maxInMemorySizeBytes: ${AGENT_RAG_SOURCE_URL_MAX_IN_MEMORY_SIZE_BYTES:4194304}
+        items:
+          - name: spring-ai-docs
+            url: https://docs.spring.io/spring-ai/reference/index.html
+            enabled: true
+          - name: mdn-http-conditional
+            url: https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Conditional_requests
+            enabled: true
+          - name: python-asyncio
+            url: https://docs.python.org/3/library/asyncio.html
+            enabled: true
+          - name: kubernetes-overview
+            url: https://kubernetes.io/docs/concepts/overview/
+            enabled: true
+    sync:
+      scheduler:
+        enabled: true
+        cron: "0 0 3 ? * SUN"
+        zone: "Asia/Shanghai"

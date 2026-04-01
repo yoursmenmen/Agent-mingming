@@ -39,6 +39,8 @@ public class VectorRetrieverService {
                   dc.doc_path AS doc_path,
                   dc.heading_path AS heading_path,
                   dc.content AS content,
+                  dc.source_type AS source_type,
+                  dc.source_id AS source_id,
                   (1 - (dce.embedding <=> CAST(:embedding AS vector))) AS score
                 FROM doc_chunk_embedding dce
                 INNER JOIN doc_chunk dc ON dc.chunk_id = dce.chunk_id
@@ -57,7 +59,9 @@ public class VectorRetrieverService {
                             rs.getString("doc_path"),
                             rs.getString("heading_path"),
                             content,
-                            estimateTokens(content));
+                            estimateTokens(content),
+                            rs.getString("source_type"),
+                            rs.getString("source_id"));
                     return new Bm25RetrieverService.RetrievalHit(chunk, rs.getDouble("score"));
                 });
     }

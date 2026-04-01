@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import ChatPanel from './components/ChatPanel.vue'
 import HeroHeader from './components/HeroHeader.vue'
+import RagPanel from './components/RagPanel.vue'
 import RunStatusPanel from './components/RunStatusPanel.vue'
 import TimelinePanel from './components/TimelinePanel.vue'
 import ToolsPanel from './components/ToolsPanel.vue'
@@ -17,16 +18,23 @@ const {
   timelineItems,
   timelineCount,
   availableTools,
+  ragSyncStatus,
+  ragSources,
+  ragDocuments,
   statusLabel,
   errorMessage,
   isRefreshing,
+  isRagRefreshing,
+  isRagTriggering,
   sendMessage,
   refreshRunEvents,
+  refreshRagStatus,
+  triggerRagSyncNow,
   formatTime,
 } = useChatConsole()
 
 const isSidebarOpen = ref(false)
-const expandedSidebarPanel = ref<'status' | 'timeline' | 'tools'>('status')
+const expandedSidebarPanel = ref<'status' | 'rag' | 'timeline' | 'tools'>('status')
 
 const sidebarTitle = computed(() => {
   if (expandedSidebarPanel.value === 'status') {
@@ -35,6 +43,9 @@ const sidebarTitle = computed(() => {
   if (expandedSidebarPanel.value === 'timeline') {
     return '事件时间线'
   }
+  if (expandedSidebarPanel.value === 'rag') {
+    return 'RAG 同步'
+  }
   return '可用工具'
 })
 
@@ -42,7 +53,7 @@ function toggleSidebar() {
   isSidebarOpen.value = !isSidebarOpen.value
 }
 
-function openSidebarPanel(panel: 'status' | 'timeline' | 'tools') {
+function openSidebarPanel(panel: 'status' | 'rag' | 'timeline' | 'tools') {
   expandedSidebarPanel.value = panel
   isSidebarOpen.value = true
 }
@@ -90,6 +101,17 @@ function openSidebarPanel(panel: 'status' | 'timeline' | 'tools') {
             class="sidebar-tab"
             type="button"
             role="tab"
+            :aria-selected="isSidebarOpen && expandedSidebarPanel === 'rag'"
+            :class="{ 'sidebar-tab--active': isSidebarOpen && expandedSidebarPanel === 'rag' }"
+            @click="openSidebarPanel('rag')"
+          >
+            <span class="sidebar-icon">◈</span>
+            <span class="sidebar-text">RAG</span>
+          </button>
+          <button
+            class="sidebar-tab"
+            type="button"
+            role="tab"
             :aria-selected="isSidebarOpen && expandedSidebarPanel === 'timeline'"
             :class="{ 'sidebar-tab--active': isSidebarOpen && expandedSidebarPanel === 'timeline' }"
             @click="openSidebarPanel('timeline')"
@@ -126,6 +148,16 @@ function openSidebarPanel(panel: 'status' | 'timeline' | 'tools') {
             :timeline-count="timelineCount"
             :is-refreshing="isRefreshing"
             @refresh="refreshRunEvents"
+          />
+          <RagPanel
+            v-show="expandedSidebarPanel === 'rag'"
+            :rag-sync-status="ragSyncStatus"
+            :rag-sources="ragSources"
+            :rag-documents="ragDocuments"
+            :is-rag-refreshing="isRagRefreshing"
+            :is-rag-triggering="isRagTriggering"
+            @refresh-rag="refreshRagStatus"
+            @trigger-rag="triggerRagSyncNow"
           />
           <TimelinePanel
             v-show="expandedSidebarPanel === 'timeline'"
