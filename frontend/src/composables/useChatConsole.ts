@@ -209,15 +209,6 @@ export function useChatConsole() {
         if (packet.event === 'event') {
           const payload = JSON.parse(packet.data) as StreamMessageEvent
           appendAssistantDelta(payload.content)
-          streamItems.value.push(
-            createStreamTimelineItem({
-              id: createId('timeline'),
-              seq: streamSeq.value++,
-              type: 'MODEL_DELTA',
-              createdAt: now,
-              payload: packet.data,
-            }),
-          )
           return
         }
 

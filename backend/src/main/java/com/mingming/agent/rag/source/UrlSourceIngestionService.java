@@ -1,8 +1,10 @@
 package com.mingming.agent.rag.source;
 
+import com.mingming.agent.entity.DocChunkEntity;
 import com.mingming.agent.entity.RagSourceSyncStateEntity;
 import com.mingming.agent.rag.DocsChunk;
 import com.mingming.agent.rag.DocsChunkingService;
+import com.mingming.agent.repository.DocChunkRepository;
 import com.mingming.agent.repository.RagSourceSyncStateRepository;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -29,15 +31,18 @@ public class UrlSourceIngestionService {
 
     private final UrlSourceProperties urlSourceProperties;
     private final DocsChunkingService docsChunkingService;
+    private final DocChunkRepository docChunkRepository;
     private final RagSourceSyncStateRepository sourceSyncStateRepository;
     private final WebClient webClient;
 
     public UrlSourceIngestionService(
             UrlSourceProperties urlSourceProperties,
             DocsChunkingService docsChunkingService,
+            DocChunkRepository docChunkRepository,
             RagSourceSyncStateRepository sourceSyncStateRepository) {
         this.urlSourceProperties = urlSourceProperties;
         this.docsChunkingService = docsChunkingService;
+        this.docChunkRepository = docChunkRepository;
         this.sourceSyncStateRepository = sourceSyncStateRepository;
         int maxBytes = Math.max(urlSourceProperties.getMaxInMemorySizeBytes(), 256 * 1024);
         this.webClient = WebClient.builder()
@@ -63,12 +68,21 @@ public class UrlSourceIngestionService {
                 continue;
             }
             String sourceId = UrlSourceIdUtil.toSourceId(name, url);
+            String docPath = Path.of("url", name + ".md").toString().replace('\\', '/');
+            List<DocsChunk> persistedChunks = loadPersistedChunks(sourceId, docPath);
             RagSourceSyncStateEntity state = sourceSyncStateRepository.findById(sourceId).orElseGet(() -> initState(sourceId));
 
             try {
-                FetchResult fetch = fetchSource(url, state);
+                FetchResult fetch = fetchSource(url, state, persistedChunks.isEmpty());
                 if (fetch.notModified()) {
                     markSkipped(state, "NOT_MODIFIED", null, fetch.etag(), fetch.lastModified());
+                    all.addAll(persistedChunks);
+                    log.info(
+                            "RAG url source unchanged via conditional request: name={}, sourceId={}, url={}, reusedChunks={}",
+                            name,
+                            sourceId,
+                            url,
+                            persistedChunks.size());
                     continue;
                 }
 
@@ -76,6 +90,13 @@ public class UrlSourceIngestionService {
                 String docHash = sha256Hex(normalized);
                 if (docHash.equals(state.getLastDocHash())) {
                     markSkipped(state, "DOC_HASH_UNCHANGED", null, fetch.etag(), fetch.lastModified());
+                    all.addAll(persistedChunks);
+                    log.info(
+                            "RAG url source unchanged via doc hash: name={}, sourceId={}, url={}, reusedChunks={}",
+                            name,
+                            sourceId,
+                            url,
+                            persistedChunks.size());
                     continue;
                 }
 
@@ -100,27 +121,57 @@ public class UrlSourceIngestionService {
                 state.setLastStatus("SUCCESS");
                 state.setLastError(null);
                 sourceSyncStateRepository.save(state);
+                log.info(
+                        "RAG url source synced: name={}, sourceId={}, url={}, chunks={}, normalizedChars={}",
+                        name,
+                        sourceId,
+                        url,
+                        chunks.size(),
+                        normalized.length());
             } catch (RuntimeException ex) {
+                all.addAll(persistedChunks);
                 state.setLastCheckedAt(OffsetDateTime.now());
                 state.setLastStatus("FAILED");
                 state.setLastError(truncateError(ex.getMessage()));
                 sourceSyncStateRepository.save(state);
 
                 log.warn(
-                        "Skip url source because fetch failed: name={}, url={}, exceptionType={}, message={}",
+                        "Skip url source because fetch failed: name={}, sourceId={}, url={}, reusedChunks={}, exceptionType={}, message={}",
                         name,
+                        sourceId,
                         url,
+                        persistedChunks.size(),
                         ex.getClass().getSimpleName(),
                         ex.getMessage());
             }
         }
+        log.info("RAG url ingestion completed: configuredSources={}, materializedChunks={}", urlSourceProperties.getItems().size(), all.size());
         return all;
     }
 
-    FetchResult fetchSource(String url, RagSourceSyncStateEntity state) {
+    private List<DocsChunk> loadPersistedChunks(String sourceId, String docPath) {
+        return docChunkRepository.findBySourceIdAndDocPath(sourceId, docPath).stream()
+                .filter(entity -> !entity.isDeleted())
+                .map(this::toDocsChunk)
+                .toList();
+    }
+
+    private DocsChunk toDocsChunk(DocChunkEntity entity) {
+        String content = entity.getContent() == null ? "" : entity.getContent();
+        return new DocsChunk(
+                entity.getChunkId(),
+                entity.getDocPath(),
+                entity.getHeadingPath(),
+                content,
+                Math.max(1, content.length() / 2),
+                entity.getSourceType(),
+                entity.getSourceId());
+    }
+
+    FetchResult fetchSource(String url, RagSourceSyncStateEntity state, boolean skipConditionalHeaders) {
         return webClient.get()
                 .uri(url)
-                .headers(headers -> applyConditionalHeaders(headers, state))
+                .headers(headers -> applyConditionalHeaders(headers, state, skipConditionalHeaders))
                 .exchangeToMono(response -> {
                     String etag = response.headers().asHttpHeaders().getETag();
                     String lastModified = response.headers().asHttpHeaders().getFirst(HttpHeaders.LAST_MODIFIED);
@@ -163,7 +214,10 @@ public class UrlSourceIngestionService {
                 .trim();
     }
 
-    private void applyConditionalHeaders(HttpHeaders headers, RagSourceSyncStateEntity state) {
+    private void applyConditionalHeaders(HttpHeaders headers, RagSourceSyncStateEntity state, boolean skipConditionalHeaders) {
+        if (skipConditionalHeaders) {
+            return;
+        }
         if (state.getEtag() != null && !state.getEtag().isBlank()) {
             headers.setIfNoneMatch(state.getEtag());
         } else if (state.getLastModified() != null && !state.getLastModified().isBlank()) {
