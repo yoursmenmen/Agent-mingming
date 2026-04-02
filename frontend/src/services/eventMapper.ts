@@ -178,8 +178,17 @@ function summarizeToolResultPayload(payload: unknown): string | null {
   const tool = typeof toolPayload.tool === 'string' && toolPayload.tool.trim().length > 0 ? toolPayload.tool : 'unknown'
   const data = toolPayload.data && typeof toolPayload.data === 'object' ? toolPayload.data : {}
   const ok = typeof data.ok === 'boolean' ? data.ok : null
+  const status = typeof data.status === 'string' ? data.status : ''
+  const actionId = typeof data.actionId === 'string' ? data.actionId : ''
   const error = typeof data.error === 'string' ? data.error : ''
   const hasContent = Array.isArray(data.content)
+
+  if (status === 'PENDING_CONFIRMATION') {
+    return `工具结果 ${tool} | 待确认执行 | actionId: ${actionId || '-'} `
+  }
+  if (status === 'BLOCKED_POLICY') {
+    return `工具结果 ${tool} | 已拦截: ${error || '策略阻止'}`
+  }
 
   if (ok === false) {
     return `工具结果 ${tool} | 失败: ${error || '未知错误'}`
@@ -188,6 +197,28 @@ function summarizeToolResultPayload(payload: unknown): string | null {
     return `工具结果 ${tool} | 成功 | content items: ${(data.content as unknown[]).length}`
   }
   return `工具结果 ${tool} | ${ok === true ? '成功' : '已返回'}`
+}
+
+function extractToolActionInfo(eventType: string | undefined, payload: unknown): Pick<TimelineItem, 'actionId' | 'actionState'> {
+  if (eventType !== 'TOOL_RESULT' || !payload || typeof payload !== 'object') {
+    return {}
+  }
+
+  const toolPayload = payload as { data?: Record<string, unknown> }
+  const data = toolPayload.data && typeof toolPayload.data === 'object' ? toolPayload.data : {}
+  const status = typeof data.status === 'string' ? data.status : ''
+  const actionId = typeof data.actionId === 'string' ? data.actionId : undefined
+
+  if (status === 'PENDING_CONFIRMATION' && actionId) {
+    return { actionId, actionState: 'PENDING_CONFIRMATION' }
+  }
+  if (status === 'BLOCKED_POLICY') {
+    return { actionState: 'BLOCKED_POLICY' }
+  }
+  if (status.length > 0) {
+    return { actionState: 'DONE' }
+  }
+  return {}
 }
 
 export function summarizePayload(payload: unknown, eventType?: string): string {
@@ -242,6 +273,7 @@ export function summarizePayload(payload: unknown, eventType?: string): string {
 
 export function mapRunEventToTimelineItem(event: RunEventItem): TimelineItem {
   const parsed = safeParsePayload(event.payload)
+  const actionInfo = extractToolActionInfo(event.type, parsed)
 
   return {
     id: event.id,
@@ -251,6 +283,7 @@ export function mapRunEventToTimelineItem(event: RunEventItem): TimelineItem {
     summary: summarizePayload(parsed, event.type),
     rawPayload: typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2),
     source: 'history',
+    ...actionInfo,
   }
 }
 
@@ -262,6 +295,7 @@ export function createStreamTimelineItem(input: {
   payload: string
 }): TimelineItem {
   const parsed = safeParsePayload(input.payload)
+  const actionInfo = extractToolActionInfo(input.type, parsed)
 
   return {
     id: input.id,
@@ -271,6 +305,7 @@ export function createStreamTimelineItem(input: {
     summary: summarizePayload(parsed, input.type),
     rawPayload: typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2),
     source: 'stream',
+    ...actionInfo,
   }
 }
 

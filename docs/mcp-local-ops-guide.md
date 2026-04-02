@@ -111,7 +111,50 @@ export AGENT_MCP_RUNTIME_ALLOW_TOOLS="fetch_page,local-ops:k8s_cluster_status"
 export AGENT_MCP_RUNTIME_DENY_TOOLS="run_local_command"
 ```
 
-## 6. 高风险工具开关（本地调试专用）
+## 6. 命令二次确认（run_local_command）
+
+后端会对 `run_local_command` 做分级：
+
+- **硬拦截**：明显破坏性模式（如 `rm *`、`rm -rf /`）
+- **待确认**：安装/变更类命令（如 `apt install`、`pip install`、`kubectl apply`）
+
+相关配置：
+
+```yaml
+agent:
+  mcp:
+    confirmation:
+      enabled: true
+      pending-ttl-seconds: 300
+```
+
+等价环境变量：
+
+- `AGENT_MCP_CONFIRMATION_ENABLED`
+- `AGENT_MCP_CONFIRMATION_PENDING_TTL_SECONDS`
+
+当工具返回 `PENDING_CONFIRMATION` 时，可用以下接口确认：
+
+```bash
+curl -X POST -H "Authorization: Bearer dev-token-change-me" \
+  http://localhost:18080/api/mcp/actions/<actionId>/confirm
+```
+
+拒绝：
+
+```bash
+curl -X POST -H "Authorization: Bearer dev-token-change-me" \
+  http://localhost:18080/api/mcp/actions/<actionId>/reject
+```
+
+查看待确认队列：
+
+```bash
+curl -H "Authorization: Bearer dev-token-change-me" \
+  http://localhost:18080/api/mcp/actions/pending
+```
+
+## 7. 高风险工具开关（本地调试专用）
 
 默认情况下，命令执行和集群状态查询是关闭的。
 
@@ -129,7 +172,7 @@ export MCP_ENABLE_K8S_READONLY=true
 python tools/mcp/local_ops_mcp.py
 ```
 
-## 7. 通过 SSH 在远端服务器执行命令（含 K8s）
+## 8. 通过 SSH 在远端服务器执行命令（含 K8s）
 
 如果你希望工具不是在本机执行，而是先 SSH 到你的服务器执行：
 
@@ -171,7 +214,7 @@ python tools/mcp/local_ops_mcp.py
 
 如果远端 `kubectl` 依赖非默认 kubeconfig，请设置 `MCP_KUBECONFIG`，否则非交互 SSH 可能拿不到正确上下文。
 
-## 8. 可观测与排障
+## 9. 可观测与排障
 
 每次聊天 run 启动时会写入一条 `MCP_TOOLS_BOUND` 事件，包含：
 
@@ -181,7 +224,7 @@ python tools/mcp/local_ops_mcp.py
 
 可通过 `GET /api/runs/{runId}/events` 查看。
 
-## 9. 安全边界说明
+## 10. 安全边界说明
 
 - `run_local_command` 不使用 shell，避免注入（`shell=False`）
 - 命令必须在白名单内

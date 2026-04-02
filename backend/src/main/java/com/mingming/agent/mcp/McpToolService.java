@@ -2,14 +2,18 @@ package com.mingming.agent.mcp;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -20,11 +24,33 @@ public class McpToolService {
     private final McpServerRegistry registry;
     private final McpHttpClient mcpHttpClient;
     private final Map<String, Boolean> enabledOverrides = new ConcurrentHashMap<>();
+    private final Map<String, PendingAction> pendingActions = new ConcurrentHashMap<>();
+
+    @Value("${agent.mcp.confirmation.enabled:true}")
+    private boolean confirmationEnabled;
+
+    @Value("${agent.mcp.confirmation.pending-ttl-seconds:300}")
+    private int pendingTtlSeconds;
+
+    private static final Pattern HARD_BLOCK_RM_WILDCARD = Pattern.compile("(?i)\\brm\\b.*\\*");
+    private static final Pattern HARD_BLOCK_RM_ROOT = Pattern.compile("(?i)\\brm\\b.*(\\s/|\\s~|\\s\\.\\./|\\s/\\*)");
+    private static final Pattern CONFIRM_INSTALL = Pattern.compile("(?i)\\b(apt|apt-get|yum|dnf|pip|pip3|npm|pnpm|yarn|brew|choco|winget)\\b.*\\b(install|update|upgrade|remove|uninstall)\\b");
+    private static final Pattern CONFIRM_MUTATION = Pattern.compile("(?i)\\b(kubectl\\s+(apply|delete|patch|scale|edit)|docker\\s+(run|exec|rm|rmi|compose\\s+up)|git\\s+(push|reset|clean)|chmod|chown|mv|cp|mkdir|touch)\\b");
 
     public McpToolService(McpServerRegistry registry, McpHttpClient mcpHttpClient) {
         this.registry = registry;
         this.mcpHttpClient = mcpHttpClient;
     }
+
+    private record PendingAction(
+            String actionId,
+            String server,
+            String tool,
+            Map<String, Object> arguments,
+            String source,
+            String reason,
+            long createdAtEpochMs,
+            long expiresAtEpochMs) {}
 
     public Map<String, Object> listTools() {
         List<Map<String, Object>> discoveredTools = new ArrayList<>();
@@ -149,8 +175,128 @@ public class McpToolService {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("enabled HTTP MCP server not found: " + serverName));
 
-        Map<String, Object> params = new LinkedHashMap<>();
         Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
+        CallGateDecision gateDecision = evaluateCallGate(toolName, safeArguments);
+        if (gateDecision.hardBlocked()) {
+            log.warn(
+                    "MCP callTool blocked: source={}, server={}, tool={}, args={}, reason={}",
+                    safe(source),
+                    safe(server.name()),
+                    safe(toolName),
+                    buildArgumentsSummary(toolName, safeArguments),
+                    gateDecision.reason());
+            return wrapResult(server.name(), toolName, Map.of(
+                    "ok", false,
+                    "status", "BLOCKED_POLICY",
+                    "executed", false,
+                    "error", gateDecision.reason(),
+                    "server", server.name(),
+                    "tool", toolName));
+        }
+
+        if (gateDecision.requiresConfirmation()) {
+            PendingAction pending = createPendingAction(server.name(), toolName, safeArguments, source, gateDecision.reason());
+            log.info(
+                    "MCP callTool pending confirmation: actionId={}, source={}, server={}, tool={}, args={}, reason={}, expiresAt={}",
+                    pending.actionId(),
+                    safe(source),
+                    pending.server(),
+                    pending.tool(),
+                    buildArgumentsSummary(toolName, safeArguments),
+                    pending.reason(),
+                    pending.expiresAtEpochMs());
+            return wrapResult(server.name(), toolName, Map.of(
+                    "ok", true,
+                    "status", "PENDING_CONFIRMATION",
+                    "deferred", true,
+                    "executed", false,
+                    "actionId", pending.actionId(),
+                    "reason", pending.reason(),
+                    "expiresAt", pending.expiresAtEpochMs(),
+                    "server", pending.server(),
+                    "tool", pending.tool(),
+                    "arguments", pending.arguments()));
+        }
+
+        Map<String, Object> result = executeToolCall(server, toolName, safeArguments, source);
+        return wrapResult(server.name(), toolName, result);
+    }
+
+    public Map<String, Object> listPendingActions() {
+        pruneExpiredPendingActions();
+        List<Map<String, Object>> actions = pendingActions.values().stream()
+                .sorted(Comparator.comparing(PendingAction::createdAtEpochMs).reversed())
+                .map(action -> {
+                    Map<String, Object> payload = new LinkedHashMap<>();
+                    payload.put("actionId", action.actionId());
+                    payload.put("server", action.server());
+                    payload.put("tool", action.tool());
+                    payload.put("source", action.source());
+                    payload.put("reason", action.reason());
+                    payload.put("arguments", action.arguments());
+                    payload.put("createdAt", action.createdAtEpochMs());
+                    payload.put("expiresAt", action.expiresAtEpochMs());
+                    return payload;
+                })
+                .toList();
+        return Map.of("actions", actions);
+    }
+
+    public Map<String, Object> confirmPendingAction(String actionId) {
+        pruneExpiredPendingActions();
+        PendingAction action = pendingActions.remove(actionId);
+        if (action == null) {
+            throw new IllegalArgumentException("pending action not found: " + safe(actionId));
+        }
+
+        McpServerConfig server = enabledHttpServers().stream()
+                .filter(cfg -> Objects.equals(cfg.name(), action.server()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("enabled HTTP MCP server not found: " + action.server()));
+
+        Map<String, Object> result;
+        String status = "CONFIRMED_EXECUTED";
+        try {
+            result = executeToolCall(server, action.tool(), action.arguments(), "api:mcp-confirm");
+        } catch (RuntimeException ex) {
+            status = "CONFIRM_EXECUTION_FAILED";
+            result = Map.of(
+                    "ok", false,
+                    "executed", false,
+                    "status", status,
+                    "error", safe(ex.getMessage()),
+                    "server", action.server(),
+                    "tool", action.tool());
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("actionId", action.actionId());
+        payload.put("status", status);
+        payload.put("server", action.server());
+        payload.put("tool", action.tool());
+        payload.put("result", result);
+        return payload;
+    }
+
+    public Map<String, Object> rejectPendingAction(String actionId) {
+        pruneExpiredPendingActions();
+        PendingAction action = pendingActions.remove(actionId);
+        if (action == null) {
+            throw new IllegalArgumentException("pending action not found: " + safe(actionId));
+        }
+        return Map.of(
+                "actionId", action.actionId(),
+                "status", "REJECTED",
+                "server", action.server(),
+                "tool", action.tool(),
+                "reason", action.reason());
+    }
+
+    private Map<String, Object> executeToolCall(
+            McpServerConfig server,
+            String toolName,
+            Map<String, Object> safeArguments,
+            String source) {
+        Map<String, Object> params = new LinkedHashMap<>();
         params.put("name", toolName);
         params.put("arguments", safeArguments);
 
@@ -182,8 +328,14 @@ public class McpToolService {
                 buildArgumentsSummary(toolName, safeArguments),
                 elapsedMs);
 
+        Map<String, Object> normalized = new LinkedHashMap<>(result);
+        normalized.putIfAbsent("executed", true);
+        return normalized;
+    }
+
+    private Map<String, Object> wrapResult(String server, String toolName, Map<String, Object> result) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("server", server.name());
+        payload.put("server", server);
         payload.put("tool", toolName);
         payload.put("result", result);
         return payload;
@@ -261,6 +413,94 @@ public class McpToolService {
 
     private String safe(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private record CallGateDecision(boolean hardBlocked, boolean requiresConfirmation, String reason) {}
+
+    private CallGateDecision evaluateCallGate(String toolName, Map<String, Object> arguments) {
+        if (!confirmationEnabled) {
+            return new CallGateDecision(false, false, "");
+        }
+
+        if (!"run_local_command".equals(toolName)) {
+            return new CallGateDecision(false, false, "");
+        }
+
+        String commandLine = normalizeCommandLine(arguments);
+        if (commandLine.isBlank()) {
+            return new CallGateDecision(false, true, "run_local_command requires explicit confirmation");
+        }
+        if (isHardBlockedCommand(commandLine)) {
+            return new CallGateDecision(true, false, "hard-blocked destructive command pattern");
+        }
+        if (isConfirmableMutation(commandLine)) {
+            return new CallGateDecision(false, true, "confirm required for mutating command");
+        }
+        return new CallGateDecision(false, false, "");
+    }
+
+    private String normalizeCommandLine(Map<String, Object> arguments) {
+        String command = safe(arguments.get("command")).trim();
+        Object argsValue = arguments.get("args");
+        List<String> args = new ArrayList<>();
+        if (argsValue instanceof List<?> list) {
+            for (Object item : list) {
+                if (item != null) {
+                    args.add(String.valueOf(item));
+                }
+            }
+        }
+        String joinedArgs = String.join(" ", args).trim();
+        String line = (command + " " + joinedArgs).trim();
+        return line.replaceAll("\\s+", " ");
+    }
+
+    private boolean isHardBlockedCommand(String commandLine) {
+        String lowered = commandLine.toLowerCase();
+        if (lowered.contains("rm -rf /") || lowered.contains("rm -rf /*") || lowered.contains("del /f /s /q c:\\")) {
+            return true;
+        }
+        return HARD_BLOCK_RM_WILDCARD.matcher(commandLine).find() || HARD_BLOCK_RM_ROOT.matcher(commandLine).find();
+    }
+
+    private boolean isConfirmableMutation(String commandLine) {
+        return CONFIRM_INSTALL.matcher(commandLine).find() || CONFIRM_MUTATION.matcher(commandLine).find();
+    }
+
+    private PendingAction createPendingAction(
+            String server,
+            String tool,
+            Map<String, Object> arguments,
+            String source,
+            String reason) {
+        pruneExpiredPendingActions();
+        String actionId = UUID.randomUUID().toString();
+        long now = System.currentTimeMillis();
+        long ttlMs = Math.max(30L, pendingTtlSeconds) * 1000L;
+        PendingAction action = new PendingAction(
+                actionId,
+                server,
+                tool,
+                new LinkedHashMap<>(arguments),
+                safe(source),
+                safe(reason),
+                now,
+                now + ttlMs);
+        pendingActions.put(actionId, action);
+        return action;
+    }
+
+    private void pruneExpiredPendingActions() {
+        long now = System.currentTimeMillis();
+        Set<String> expiredIds = new HashSet<>();
+        for (Map.Entry<String, PendingAction> entry : pendingActions.entrySet()) {
+            if (entry.getValue().expiresAtEpochMs() <= now) {
+                expiredIds.add(entry.getKey());
+            }
+        }
+        for (String id : expiredIds) {
+            pendingActions.remove(id);
+        }
     }
 
     private String buildArgumentsSummary(String toolName, Map<String, Object> arguments) {

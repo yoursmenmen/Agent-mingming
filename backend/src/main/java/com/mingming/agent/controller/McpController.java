@@ -5,6 +5,7 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -40,6 +41,40 @@ public class McpController {
     public Object setServerEnabled(@RequestBody McpServerEnabledRequest request) {
         log.info("MCP API called: /api/mcp/servers/enabled, server={}, enabled={}", request.server(), request.enabled());
         return mcpToolService.setServerEnabled(request.server(), request.enabled());
+    }
+
+    @GetMapping("/api/mcp/actions/pending")
+    public Object listPendingActions() {
+        log.info("MCP API called: /api/mcp/actions/pending");
+        return mcpToolService.listPendingActions();
+    }
+
+    @PostMapping("/api/mcp/actions/{actionId}/confirm")
+    public Object confirmPendingAction(@PathVariable String actionId) {
+        log.info("MCP API called: /api/mcp/actions/{}/confirm", actionId);
+        try {
+            return mcpToolService.confirmPendingAction(actionId);
+        } catch (RuntimeException ex) {
+            return Map.of(
+                    "actionId", actionId,
+                    "status", "CONFIRM_FAILED",
+                    "ok", false,
+                    "error", ex.getMessage());
+        }
+    }
+
+    @PostMapping("/api/mcp/actions/{actionId}/reject")
+    public Object rejectPendingAction(@PathVariable String actionId) {
+        log.info("MCP API called: /api/mcp/actions/{}/reject", actionId);
+        try {
+            return mcpToolService.rejectPendingAction(actionId);
+        } catch (RuntimeException ex) {
+            return Map.of(
+                    "actionId", actionId,
+                    "status", "REJECT_FAILED",
+                    "ok", false,
+                    "error", ex.getMessage());
+        }
     }
 
     public record McpToolCallRequest(String server, String toolName, Map<String, Object> arguments) {}

@@ -18,6 +18,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -255,7 +256,16 @@ def run_local_command(arguments: Dict[str, Any]) -> Dict[str, Any]:
             if not any(first.startswith(prefix) for prefix in prefixes):
                 raise PermissionError(f"first arg not allowed for {command}: {first}")
 
-    return run_command([command, *args])
+    command_to_run = command
+    if os.name == "nt":
+        lowered = command.lower()
+        needs_cmd_suffix = lowered in {"npm", "pnpm", "yarn", "npx", "node"} and not lowered.endswith(".cmd")
+        if needs_cmd_suffix:
+            candidate = f"{command}.cmd"
+            if shutil.which(candidate):
+                command_to_run = candidate
+
+    return run_command([command_to_run, *args])
 
 
 def k8s_cluster_status(arguments: Dict[str, Any]) -> Dict[str, Any]:

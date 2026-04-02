@@ -24,6 +24,8 @@
 | `AGENT_MCP_RUNTIME_ALLOW_TOOLS` | MCP 动态注入 allowlist（逗号分隔，支持 `tool` 或 `server:tool`） | `fetch_page,local-ops:k8s_cluster_status` |
 | `AGENT_MCP_RUNTIME_DENY_TOOLS` | MCP 动态注入 denylist（逗号分隔，支持 `tool` 或 `server:tool`） | `run_local_command` |
 | `AGENT_MCP_RUNTIME_MAX_CALLBACKS` | 单次聊天最多注入的 MCP 工具数量 | `32` |
+| `AGENT_MCP_CONFIRMATION_ENABLED` | 是否启用 `run_local_command` 二次确认网关 | `true` |
+| `AGENT_MCP_CONFIRMATION_PENDING_TTL_SECONDS` | 待确认 action 的过期时间（秒） | `300` |
 
 ## `backend/src/main/resources/application.yml`
 
@@ -35,6 +37,8 @@
 - `agent.mcp.runtime.allow-tools`：MCP 动态注入 allowlist（空表示不过滤）
 - `agent.mcp.runtime.deny-tools`：MCP 动态注入 denylist（优先级高于 allowlist）
 - `agent.mcp.runtime.max-callbacks`：单次动态注入的 MCP 工具上限
+- `agent.mcp.confirmation.enabled`：启用 run_local_command 二次确认
+- `agent.mcp.confirmation.pending-ttl-seconds`：待确认 action 过期时间
 - `agent.rag.vector.enabled`：向量 RAG 总开关
 - `agent.rag.vector.docsRoot`：文档扫描根目录
 - `agent.rag.vector.embeddingModel`：向量模型标识

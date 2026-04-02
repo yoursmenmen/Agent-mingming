@@ -99,6 +99,50 @@ export async function setMcpServerEnabled(server: string, enabled: boolean): Pro
   }
 }
 
+export async function confirmMcpAction(actionId: string): Promise<{
+  actionId: string
+  status: string
+  server?: string
+  tool?: string
+  result?: Record<string, unknown>
+  ok?: boolean
+  error?: string
+}> {
+  const response = await fetch(`/api/mcp/actions/${actionId}/confirm`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${DEV_TOKEN}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`确认 MCP 动作失败：${response.status}`)
+  }
+
+  return response.json() as Promise<{
+    actionId: string
+    status: string
+    server?: string
+    tool?: string
+    result?: Record<string, unknown>
+    ok?: boolean
+    error?: string
+  }>
+}
+
+export async function rejectMcpAction(actionId: string): Promise<void> {
+  const response = await fetch(`/api/mcp/actions/${actionId}/reject`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${DEV_TOKEN}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`拒绝 MCP 动作失败：${response.status}`)
+  }
+}
+
 export async function fetchRagSyncStatus(): Promise<RagSyncStatus> {
   const response = await fetch('/api/rag/sync/status', {
     headers: {

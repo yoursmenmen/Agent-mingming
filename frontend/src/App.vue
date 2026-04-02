@@ -30,11 +30,15 @@ const {
   isRagTriggering,
   isMcpRefreshing,
   mcpUpdatingServers,
+  pendingMcpActions,
+  handlingActionIds,
   sendMessage,
   refreshRunEvents,
   refreshTools,
   refreshMcpServers,
   toggleMcpServer,
+  confirmPendingMcpAction,
+  rejectPendingMcpAction,
   refreshRagStatus,
   triggerRagSyncNow,
   formatTime,
@@ -134,7 +138,11 @@ function openSidebarPanel(panel: InspectorPaneId) {
         :messages="messages"
         :run-status="runStatus"
         :error-message="errorMessage"
+        :pending-mcp-actions="pendingMcpActions"
+        :handling-action-ids="handlingActionIds"
         :format-time="formatTime"
+        @confirm-pending-action="confirmPendingMcpAction"
+        @reject-pending-action="rejectPendingMcpAction"
         @send="sendMessage"
       />
 

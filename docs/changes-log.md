@@ -301,3 +301,45 @@ Flyway migrations：
   - 将向量列改为 `vector(1024)`
   - 清理旧维度 embedding 并重建向量索引
 - 同步更新检索与同步服务的维度校验及测试断言。
+
+## 14) 2026-04-02 迭代（MCP 动态接入、确认网关与前端可观测）
+
+### MCP 动态工具注入主链路
+- `AgentOrchestrator` 支持在每次对话前动态发现 MCP tools，并以 runtime callback 注入模型工具列表。
+- 新增 `McpRuntimeToolCallbackFactory`：
+  - 从 MCP `tools/list` 构建 callback
+  - 支持工具命名规整与去重
+  - 支持 `inputSchema.required` 提取并做基础必填校验
+- 新增 run event `MCP_TOOLS_BOUND`，记录本次注入/阻断/发现错误详情。
+
+### MCP 运行时治理与日志
+- 新增配置：
+  - `agent.mcp.runtime.enabled`
+  - `agent.mcp.runtime.allow-tools`
+  - `agent.mcp.runtime.deny-tools`
+  - `agent.mcp.runtime.max-callbacks`
+- MCP 日志从“高频列表噪音”转向“关键调用日志”，包含 source/server/tool/args 摘要与耗时。
+
+### run_local_command 二次确认网关
+- 在 `McpToolService` 增加命令风险分级：
+  - 硬拦截：明显破坏性命令模式（如 `rm *`）
+  - 待确认：安装或变更类命令
+- 新增待确认动作接口：
+  - `GET /api/mcp/actions/pending`
+  - `POST /api/mcp/actions/{actionId}/confirm`
+  - `POST /api/mcp/actions/{actionId}/reject`
+- confirm 执行失败时改为业务化返回，避免 servlet 直接抛 500。
+
+### 前端交互与体验调整
+- 时间线改为“关键事件实时可见”，并过滤 `MODEL_DELTA`。
+- `TOOL_CALL` / `TOOL_RESULT` 摘要增强，支持展示 pending/block 状态。
+- 待确认动作入口改到聊天区，支持一键确认/拒绝。
+- 确认后自动触发一次 follow-up 对话，将命令执行结果喂给模型并输出成功/失败说明。
+- 修复 `TimelinePanel` props 空值导致的渲染异常（`includes` of undefined）。
+
+### 本地 MCP 兼容性修复（Windows）
+- `tools/mcp/local_ops_mcp.py` 对 `npm/pnpm/yarn/npx/node` 增加 `.cmd` 兜底，减少 `[WinError 2]`。
+
+### 文档同步
+- 更新：`docs/config-reference.md`、`docs/mcp-local-ops-guide.md`、`docs/README.md`
+- 新增：`docs/progress-status.md`（当前阶段快照与已知问题/下一步）

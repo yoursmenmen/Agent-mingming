@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import StructuredCardHost from './structured/StructuredCardHost.vue'
 import type { ChatMessage } from '../types/chat'
-import type { RunStatus } from '../types/run'
+import type { PendingMcpAction, RunStatus } from '../types/run'
 import { renderMarkdown } from '../services/markdown'
 
 const props = defineProps<{
@@ -10,12 +10,16 @@ const props = defineProps<{
   draft: string
   runStatus: RunStatus
   errorMessage: string
+  pendingMcpActions?: PendingMcpAction[]
+  handlingActionIds?: string[]
   formatTime: (value: string) => string
 }>()
 
 const emit = defineEmits<{
   send: []
   'update:draft': [value: string]
+  'confirm-pending-action': [actionId: string]
+  'reject-pending-action': [actionId: string]
 }>()
 
 const bottomAnchorRef = ref<HTMLElement | null>(null)
@@ -82,6 +86,9 @@ function toMessageHtml(message: ChatMessage): string {
   }
   return renderMarkdown(message.content)
 }
+
+const pendingActions = computed(() => props.pendingMcpActions ?? [])
+const handlingActionIds = computed(() => props.handlingActionIds ?? [])
 </script>
 
 <template>
@@ -119,6 +126,33 @@ function toMessageHtml(message: ChatMessage): string {
     </div>
 
     <div class="chat-panel-footer">
+      <div v-if="pendingActions.length" class="pending-actions-banner">
+        <p><strong>命令待你确认</strong>（未执行）</p>
+        <ul>
+          <li v-for="action in pendingActions" :key="action.actionId" class="pending-action-item">
+            <span>{{ action.summary }}</span>
+            <div class="pending-action-controls">
+              <button
+                class="ghost-button"
+                type="button"
+                :disabled="handlingActionIds.includes(action.actionId)"
+                @click="emit('confirm-pending-action', action.actionId)"
+              >
+                {{ handlingActionIds.includes(action.actionId) ? '执行中…' : '确认执行' }}
+              </button>
+              <button
+                class="ghost-button ghost-button--danger"
+                type="button"
+                :disabled="handlingActionIds.includes(action.actionId)"
+                @click="emit('reject-pending-action', action.actionId)"
+              >
+                拒绝
+              </button>
+            </div>
+          </li>
+        </ul>
+      </div>
+
       <div v-if="errorMessage" class="error-banner">{{ errorMessage }}</div>
 
       <form class="composer" @submit.prevent="emit('send')">

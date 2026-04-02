@@ -40,6 +40,9 @@ agent:
       allow-tools: ${AGENT_MCP_RUNTIME_ALLOW_TOOLS:}
       deny-tools: ${AGENT_MCP_RUNTIME_DENY_TOOLS:}
       max-callbacks: ${AGENT_MCP_RUNTIME_MAX_CALLBACKS:32}
+    confirmation:
+      enabled: ${AGENT_MCP_CONFIRMATION_ENABLED:true}
+      pending-ttl-seconds: ${AGENT_MCP_CONFIRMATION_PENDING_TTL_SECONDS:300}
   rag:
     vector:
       enabled: ${AGENT_RAG_VECTOR_ENABLED:true}

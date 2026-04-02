@@ -1,10 +1,33 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { fetchMcpServers, fetchRagDocuments, fetchRagSources, fetchRagSyncStatus, fetchRunEvents, fetchSessionEvents, fetchTools, postChatStream, setMcpServerEnabled, triggerRagSync } from '../services/api'
+import {
+  confirmMcpAction,
+  fetchMcpServers,
+  fetchRagDocuments,
+  fetchRagSources,
+  fetchRagSyncStatus,
+  fetchRunEvents,
+  fetchSessionEvents,
+  fetchTools,
+  postChatStream,
+  rejectMcpAction,
+  setMcpServerEnabled,
+  triggerRagSync,
+} from '../services/api'
 import { createStreamTimelineItem, mapRunEventToTimelineItem, mergeTimelineItems } from '../services/eventMapper'
 import { parseStructuredPayload } from '../services/structured'
 import { consumeSseStream } from '../services/sse'
 import type { ChatMessage, StreamErrorEvent, StreamMessageEvent, StreamRunEvent } from '../types/chat'
-import type { McpServerInfo, RagDocuments, RagSourceInfo, RagSyncStatus, RunEventItem, RunStatus, TimelineItem, ToolInfo } from '../types/run'
+import type {
+  McpServerInfo,
+  PendingMcpAction,
+  RagDocuments,
+  RagSourceInfo,
+  RagSyncStatus,
+  RunEventItem,
+  RunStatus,
+  TimelineItem,
+  ToolInfo,
+} from '../types/run'
 
 type ModelMessagePayload = {
   content?: unknown
@@ -58,9 +81,28 @@ export function useChatConsole() {
   const streamSeq = ref(1)
   const runEventsPollingTimer = ref<number | null>(null)
   const runEventsPollingActive = ref(false)
+  const handlingActionIds = ref<string[]>([])
+  const resolvedActionIds = ref<string[]>([])
 
   const timelineItems = computed(() => mergeTimelineItems(streamItems.value, historyItems.value))
   const timelineCount = computed(() => timelineItems.value.length)
+  const pendingMcpActions = computed<PendingMcpAction[]>(() => {
+    const actionsById = new Map<string, PendingMcpAction>()
+    for (const item of [...timelineItems.value].reverse()) {
+      if (item.actionState === 'PENDING_CONFIRMATION' && item.actionId) {
+        if (resolvedActionIds.value.includes(item.actionId)) {
+          continue
+        }
+        actionsById.set(item.actionId, {
+          actionId: item.actionId,
+          tool: item.type,
+          summary: item.summary,
+          createdAt: item.createdAt,
+        })
+      }
+    }
+    return [...actionsById.values()].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  })
   const statusLabel = computed(() => {
     switch (runStatus.value) {
       case 'streaming':
@@ -229,31 +271,37 @@ export function useChatConsole() {
       return
     }
 
-    pushUserMessage(content)
+    resolvedActionIds.value = []
+    await executeChatTurn(content, true)
+  }
+
+  async function executeChatTurn(content: string, showUserMessage: boolean) {
+    if (showUserMessage) {
+      pushUserMessage(content)
+    }
     draft.value = ''
     errorMessage.value = ''
     runStatus.value = 'streaming'
     runId.value = '建立连接中…'
     streamItems.value = []
     streamSeq.value = 1
-    streamItems.value.push(
-      createStreamTimelineItem({
-        id: createId('timeline-user'),
-        seq: streamSeq.value++,
-        type: 'USER_MESSAGE',
-        createdAt: new Date().toISOString(),
-        payload: JSON.stringify({ content }),
-      }),
-    )
+    if (showUserMessage) {
+      streamItems.value.push(
+        createStreamTimelineItem({
+          id: createId('timeline-user'),
+          seq: streamSeq.value++,
+          type: 'USER_MESSAGE',
+          createdAt: new Date().toISOString(),
+          payload: JSON.stringify({ content }),
+        }),
+      )
+    }
     createAssistantPlaceholder()
 
     let streamFailed = false
 
     try {
-      const response = await postChatStream({
-        message: content,
-        sessionId: sessionId.value ?? undefined,
-      })
+      const response = await postChatStream({ message: content, sessionId: sessionId.value ?? undefined })
       await consumeSseStream(response, (packet) => {
         const now = new Date().toISOString()
 
@@ -305,6 +353,53 @@ export function useChatConsole() {
     }
   }
 
+  function summarizeConfirmResultForModel(confirmResponse: {
+    actionId: string
+    status: string
+    server?: string
+    tool?: string
+    result?: Record<string, unknown>
+    ok?: boolean
+    error?: string
+  }): string {
+    const status = confirmResponse.status || 'UNKNOWN'
+    const actionId = confirmResponse.actionId || 'unknown'
+    const tool = confirmResponse.tool || 'unknown'
+    const server = confirmResponse.server || 'unknown'
+    const result = confirmResponse.result && typeof confirmResponse.result === 'object' ? confirmResponse.result : {}
+    const exitCode = typeof result.exitCode === 'number' ? result.exitCode : null
+    const stdout = typeof result.stdout === 'string' ? result.stdout : ''
+    const stderr = typeof result.stderr === 'string' ? result.stderr : ''
+    const executionMode = typeof result.executionMode === 'string' ? result.executionMode : ''
+
+    if (status !== 'CONFIRMED_EXECUTED') {
+      const error =
+        (typeof confirmResponse.error === 'string' && confirmResponse.error) ||
+        (typeof result.error === 'string' && result.error) ||
+        'unknown error'
+      return [
+        '以下是命令确认执行结果，请简短告知用户执行失败，不要再次调用任何工具。',
+        `actionId=${actionId}`,
+        `server=${server}`,
+        `tool=${tool}`,
+        `status=${status}`,
+        `error=${error}`,
+      ].join('\n')
+    }
+
+    return [
+      '以下是命令确认执行结果，请简短告知用户执行成功或失败，不要再次调用任何工具。',
+      `actionId=${actionId}`,
+      `server=${server}`,
+      `tool=${tool}`,
+      `status=${status}`,
+      `executionMode=${executionMode}`,
+      `exitCode=${exitCode === null ? 'N/A' : String(exitCode)}`,
+      `stdout=${stdout.slice(0, 1600)}`,
+      `stderr=${stderr.slice(0, 800)}`,
+    ].join('\n')
+  }
+
   async function refreshTools() {
     try {
       availableTools.value = await fetchTools()
@@ -354,6 +449,40 @@ export function useChatConsole() {
     }
   }
 
+  function isHandlingAction(actionId: string): boolean {
+    return handlingActionIds.value.includes(actionId)
+  }
+
+  async function handleMcpAction(actionId: string, decision: 'confirm' | 'reject') {
+    if (!actionId || isHandlingAction(actionId)) {
+      return
+    }
+    handlingActionIds.value = [...handlingActionIds.value, actionId]
+    try {
+      if (decision === 'confirm') {
+        const confirmResponse = await confirmMcpAction(actionId)
+        const followupMessage = summarizeConfirmResultForModel(confirmResponse)
+        await executeChatTurn(followupMessage, false)
+      } else {
+        await rejectMcpAction(actionId)
+      }
+      resolvedActionIds.value = [...resolvedActionIds.value, actionId]
+      await refreshRunEvents()
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : '处理 MCP 动作失败'
+    } finally {
+      handlingActionIds.value = handlingActionIds.value.filter((id) => id !== actionId)
+    }
+  }
+
+  async function confirmPendingMcpAction(actionId: string) {
+    await handleMcpAction(actionId, 'confirm')
+  }
+
+  async function rejectPendingMcpAction(actionId: string) {
+    await handleMcpAction(actionId, 'reject')
+  }
+
   async function triggerRagSyncNow() {
     if (isRagTriggering.value) {
       return
@@ -399,6 +528,7 @@ export function useChatConsole() {
     runStatus,
     timelineItems,
     timelineCount,
+    pendingMcpActions,
     availableTools,
     mcpServers,
     ragSyncStatus,
@@ -411,11 +541,14 @@ export function useChatConsole() {
     isRagTriggering,
     isMcpRefreshing,
     mcpUpdatingServers,
+    handlingActionIds,
     sendMessage,
     refreshRunEvents,
     refreshTools,
     refreshMcpServers,
     toggleMcpServer,
+    confirmPendingMcpAction,
+    rejectPendingMcpAction,
     refreshRagStatus,
     triggerRagSyncNow,
     formatTime,

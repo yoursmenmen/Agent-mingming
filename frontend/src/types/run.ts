@@ -15,6 +15,15 @@ export interface TimelineItem {
   summary: string
   rawPayload: string
   source: 'stream' | 'history'
+  actionId?: string
+  actionState?: 'PENDING_CONFIRMATION' | 'BLOCKED_POLICY' | 'DONE'
+}
+
+export interface PendingMcpAction {
+  actionId: string
+  tool: string
+  summary: string
+  createdAt: string
 }
 
 export type RunStatus = 'idle' | 'streaming' | 'done' | 'error'
