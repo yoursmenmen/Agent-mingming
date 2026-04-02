@@ -6,6 +6,7 @@ public enum RunEventType {
     MODEL_MESSAGE,
     RETRIEVAL_RESULT,
     RAG_SYNC,
+    MCP_TOOLS_BOUND,
     TOOL_CALL,
     TOOL_RESULT,
     ERROR

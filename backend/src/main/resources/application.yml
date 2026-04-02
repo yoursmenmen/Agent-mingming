@@ -33,6 +33,13 @@ management:
 agent:
   security:
     apiToken: ${AGENT_API_TOKEN:dev-token-change-me}
+  mcp:
+    default-server: ${AGENT_MCP_DEFAULT_SERVER:local-ops}
+    runtime:
+      enabled: ${AGENT_MCP_RUNTIME_ENABLED:true}
+      allow-tools: ${AGENT_MCP_RUNTIME_ALLOW_TOOLS:}
+      deny-tools: ${AGENT_MCP_RUNTIME_DENY_TOOLS:}
+      max-callbacks: ${AGENT_MCP_RUNTIME_MAX_CALLBACKS:32}
   rag:
     vector:
       enabled: ${AGENT_RAG_VECTOR_ENABLED:true}

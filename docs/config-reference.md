@@ -19,12 +19,22 @@
 | `AGENT_RAG_SYNC_SCHEDULER_ENABLED` | 是否启用定时同步任务 | `false` |
 | `AGENT_RAG_SYNC_SCHEDULER_CRON` | 定时同步 cron 表达式 | `0 0 3 ? * SUN` |
 | `AGENT_RAG_SYNC_SCHEDULER_ZONE` | 定时同步时区 | `Asia/Shanghai` |
+| `AGENT_MCP_DEFAULT_SERVER` | MCP 桥接技能默认 server 名称 | `local-ops` |
+| `AGENT_MCP_RUNTIME_ENABLED` | 是否开启聊天链路的 MCP 动态工具注入 | `true` |
+| `AGENT_MCP_RUNTIME_ALLOW_TOOLS` | MCP 动态注入 allowlist（逗号分隔，支持 `tool` 或 `server:tool`） | `fetch_page,local-ops:k8s_cluster_status` |
+| `AGENT_MCP_RUNTIME_DENY_TOOLS` | MCP 动态注入 denylist（逗号分隔，支持 `tool` 或 `server:tool`） | `run_local_command` |
+| `AGENT_MCP_RUNTIME_MAX_CALLBACKS` | 单次聊天最多注入的 MCP 工具数量 | `32` |
 
 ## `backend/src/main/resources/application.yml`
 
 - `server.port`：后端端口（默认 `18080`）
 - `spring.ai.dashscope.api-key`：绑定到 `AI_DASHSCOPE_API_KEY`
 - `agent.security.apiToken`：绑定到 `AGENT_API_TOKEN`
+- `agent.mcp.default-server`：MCP 桥接技能默认 server
+- `agent.mcp.runtime.enabled`：MCP 动态工具注入开关
+- `agent.mcp.runtime.allow-tools`：MCP 动态注入 allowlist（空表示不过滤）
+- `agent.mcp.runtime.deny-tools`：MCP 动态注入 denylist（优先级高于 allowlist）
+- `agent.mcp.runtime.max-callbacks`：单次动态注入的 MCP 工具上限
 - `agent.rag.vector.enabled`：向量 RAG 总开关
 - `agent.rag.vector.docsRoot`：文档扫描根目录
 - `agent.rag.vector.embeddingModel`：向量模型标识
@@ -64,7 +74,7 @@ agent:
 
 ## MCP 配置：`backend/src/main/resources/mcp/servers.yml`
 
-当前格式（MVP 占位）：
+当前格式：
 
 ```yaml
 servers:
@@ -76,4 +86,10 @@ servers:
     timeoutMs: 10000
 ```
 
-> MCP 的 tool discovery 与 tool invocation 将在下一步实现。
+聊天链路会在每次请求开始时执行 MCP tools/list，并按策略动态注入工具：
+
+- 先应用 `deny-tools`
+- 再应用 `allow-tools`（若配置）
+- 最后应用 `max-callbacks` 数量上限
+
+系统会写入 `MCP_TOOLS_BOUND` run-event，包含注入清单、被策略拦截工具和 discovery 错误，用于排障。

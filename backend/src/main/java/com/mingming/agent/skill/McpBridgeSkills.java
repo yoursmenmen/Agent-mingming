@@ -70,7 +70,7 @@ public class McpBridgeSkills implements LocalToolProvider {
     private Map<String, Object> callMcpTool(String toolName, Map<String, Object> arguments, ToolContext toolContext) {
         toolEventService.recordToolCall(toolContext, toolName, arguments);
         try {
-            Map<String, Object> response = mcpToolService.callTool(defaultServer, toolName, arguments);
+            Map<String, Object> response = mcpToolService.callTool(defaultServer, toolName, arguments, "chat:bridge-skill");
             Object resultObj = response.get("result");
             Map<String, Object> resultPayload;
             if (resultObj instanceof Map<?, ?> resultMap) {

@@ -33,7 +33,7 @@ public class McpController {
     @PostMapping("/api/mcp/tools/call")
     public Object callTool(@RequestBody McpToolCallRequest request) {
         log.info("MCP API called: /api/mcp/tools/call, server={}, tool={}", request.server(), request.toolName());
-        return mcpToolService.callTool(request.server(), request.toolName(), request.arguments());
+        return mcpToolService.callTool(request.server(), request.toolName(), request.arguments(), "api:mcp-tools-call");
     }
 
     @PostMapping("/api/mcp/servers/enabled")

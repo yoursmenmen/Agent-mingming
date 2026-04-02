@@ -30,7 +30,7 @@ public class McpToolService {
         List<Map<String, Object>> discoveredTools = new ArrayList<>();
         List<Map<String, Object>> errors = new ArrayList<>();
         List<McpServerConfig> servers = enabledHttpServers();
-        log.info("MCP listTools start: enabledHttpServers={}", servers.size());
+        log.debug("MCP listTools start: enabledHttpServers={}", servers.size());
 
         for (McpServerConfig server : servers) {
             try {
@@ -56,7 +56,7 @@ public class McpToolService {
             }
         }
 
-        log.info("MCP listTools completed: discoveredTools={}, errors={}", discoveredTools.size(), errors.size());
+        log.debug("MCP listTools completed: discoveredTools={}, errors={}", discoveredTools.size(), errors.size());
 
         return Map.of("tools", discoveredTools, "errors", errors);
     }
@@ -64,7 +64,7 @@ public class McpToolService {
     public Map<String, Object> listServersWithTools() {
         List<Map<String, Object>> servers = new ArrayList<>();
         List<McpServerConfig> configured = configuredServers();
-        log.info("MCP listServers start: configuredServers={}", configured.size());
+        log.debug("MCP listServers start: configuredServers={}", configured.size());
         for (McpServerConfig server : configured) {
             Map<String, Object> serverPayload = new LinkedHashMap<>();
             serverPayload.put("name", safe(server.name()));
@@ -108,7 +108,7 @@ public class McpToolService {
             }
             servers.add(serverPayload);
         }
-        log.info("MCP listServers completed: returnedServers={}", servers.size());
+        log.debug("MCP listServers completed: returnedServers={}", servers.size());
         return Map.of("servers", servers);
     }
 
@@ -133,6 +133,10 @@ public class McpToolService {
     }
 
     public Map<String, Object> callTool(String serverName, String toolName, Map<String, Object> arguments) {
+        return callTool(serverName, toolName, arguments, "unknown");
+    }
+
+    public Map<String, Object> callTool(String serverName, String toolName, Map<String, Object> arguments, String source) {
         if (serverName == null || serverName.isBlank()) {
             throw new IllegalArgumentException("server is required");
         }
@@ -146,12 +150,37 @@ public class McpToolService {
                 .orElseThrow(() -> new IllegalArgumentException("enabled HTTP MCP server not found: " + serverName));
 
         Map<String, Object> params = new LinkedHashMap<>();
+        Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
         params.put("name", toolName);
-        params.put("arguments", arguments == null ? Map.of() : arguments);
+        params.put("arguments", safeArguments);
 
-        Map<String, Object> response = callRpc(server, "tools/call", params);
-        Map<String, Object> result = extractResult(response);
-        log.info("MCP callTool completed: server={}, tool={}", server.name(), toolName);
+        long start = System.currentTimeMillis();
+        Map<String, Object> response;
+        Map<String, Object> result;
+        try {
+            response = callRpc(server, "tools/call", params);
+            result = extractResult(response);
+        } catch (RuntimeException ex) {
+            long elapsedMs = Math.max(1L, System.currentTimeMillis() - start);
+            log.warn(
+                    "MCP callTool failed: source={}, server={}, tool={}, args={}, elapsedMs={}, message={}",
+                    safe(source),
+                    safe(server.name()),
+                    safe(toolName),
+                    buildArgumentsSummary(toolName, safeArguments),
+                    elapsedMs,
+                    safe(ex.getMessage()));
+            throw ex;
+        }
+
+        long elapsedMs = Math.max(1L, System.currentTimeMillis() - start);
+        log.info(
+                "MCP callTool success: source={}, server={}, tool={}, args={}, elapsedMs={}",
+                safe(source),
+                safe(server.name()),
+                safe(toolName),
+                buildArgumentsSummary(toolName, safeArguments),
+                elapsedMs);
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("server", server.name());
@@ -232,5 +261,38 @@ public class McpToolService {
 
     private String safe(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private String buildArgumentsSummary(String toolName, Map<String, Object> arguments) {
+        if (arguments == null || arguments.isEmpty()) {
+            return "{}";
+        }
+
+        String loweredToolName = safe(toolName).toLowerCase();
+        if (arguments.containsKey("url")) {
+            String url = truncate(safe(arguments.get("url")), 180);
+            return "{url=" + url + ", keys=" + keySummary(arguments) + "}";
+        }
+        if (loweredToolName.contains("command") || arguments.containsKey("command")) {
+            String command = truncate(safe(arguments.get("command")), 120);
+            Object args = arguments.get("args");
+            int argCount = args instanceof List<?> list ? list.size() : 0;
+            return "{command=" + command + ", argCount=" + argCount + ", keys=" + keySummary(arguments) + "}";
+        }
+        return "{keys=" + keySummary(arguments) + "}";
+    }
+
+    private String keySummary(Map<String, Object> arguments) {
+        return arguments.keySet().stream().sorted().toList().toString();
+    }
+
+    private String truncate(String value, int maxLen) {
+        if (value == null) {
+            return "";
+        }
+        if (value.length() <= maxLen) {
+            return value;
+        }
+        return value.substring(0, Math.max(0, maxLen - 3)) + "...";
     }
 }

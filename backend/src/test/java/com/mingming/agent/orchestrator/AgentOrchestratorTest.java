@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mingming.agent.entity.RunEventEntity;
+import com.mingming.agent.mcp.McpRuntimeToolCallbackFactory;
 import com.mingming.agent.rag.Bm25RetrieverService;
 import com.mingming.agent.rag.DocsChunk;
 import com.mingming.agent.rag.DocsChunkingService;
@@ -57,6 +58,9 @@ class AgentOrchestratorTest {
 
     @Mock
     private RetrievalEventService retrievalEventService;
+
+    @Mock
+    private McpRuntimeToolCallbackFactory mcpRuntimeToolCallbackFactory;
 
     private final VectorRagProperties vectorRagProperties = new VectorRagProperties();
 
@@ -395,6 +399,7 @@ class AgentOrchestratorTest {
                 docsChunkingService,
                 vectorRagProperties,
                 hybridRetrievalService,
-                retrievalEventService);
+                retrievalEventService,
+                mcpRuntimeToolCallbackFactory);
     }
 }

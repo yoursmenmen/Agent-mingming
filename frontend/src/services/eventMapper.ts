@@ -107,6 +107,89 @@ function summarizeRagSyncPayload(payload: unknown): string | null {
   return `RAG 同步事件 | 阶段: ${phase} | 触发: ${trigger}`
 }
 
+function summarizeMcpToolsBoundPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+
+  const mcpPayload = payload as {
+    localToolCount?: unknown
+    mcpToolCount?: unknown
+    totalToolCount?: unknown
+    injectedMcpTools?: unknown
+    blockedMcpTools?: unknown
+    mcpDiscoveryErrors?: unknown
+  }
+
+  const localToolCount =
+    typeof mcpPayload.localToolCount === 'number' && Number.isFinite(mcpPayload.localToolCount)
+      ? mcpPayload.localToolCount
+      : 0
+  const mcpToolCount =
+    typeof mcpPayload.mcpToolCount === 'number' && Number.isFinite(mcpPayload.mcpToolCount) ? mcpPayload.mcpToolCount : 0
+  const totalToolCount =
+    typeof mcpPayload.totalToolCount === 'number' && Number.isFinite(mcpPayload.totalToolCount)
+      ? mcpPayload.totalToolCount
+      : localToolCount + mcpToolCount
+  const blockedCount = Array.isArray(mcpPayload.blockedMcpTools) ? mcpPayload.blockedMcpTools.length : 0
+  const discoveryErrorCount = Array.isArray(mcpPayload.mcpDiscoveryErrors) ? mcpPayload.mcpDiscoveryErrors.length : 0
+  const injected = Array.isArray(mcpPayload.injectedMcpTools) ? mcpPayload.injectedMcpTools : []
+  const firstInjected = injected.find(
+    (item): item is { callbackName?: unknown } => Boolean(item && typeof item === 'object'),
+  )
+  const firstCallbackName = typeof firstInjected?.callbackName === 'string' ? firstInjected.callbackName : 'N/A'
+
+  return `工具注入完成 | 本地: ${localToolCount} | MCP: ${mcpToolCount} | 总计: ${totalToolCount} | 屏蔽: ${blockedCount} | 发现错误: ${discoveryErrorCount} | 首个MCP: ${firstCallbackName}`
+}
+
+function summarizeToolCallPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+
+  const toolPayload = payload as {
+    tool?: unknown
+    data?: Record<string, unknown>
+  }
+  const tool = typeof toolPayload.tool === 'string' && toolPayload.tool.trim().length > 0 ? toolPayload.tool : 'unknown'
+  const data = toolPayload.data && typeof toolPayload.data === 'object' ? toolPayload.data : {}
+  const keys = Object.keys(data)
+  const url = typeof data.url === 'string' ? data.url : null
+  const command = typeof data.command === 'string' ? data.command : null
+
+  if (url) {
+    return `工具调用 ${tool} | url: ${url}`
+  }
+  if (command) {
+    return `工具调用 ${tool} | command: ${command} | 参数键: ${keys.join(', ') || '-'}`
+  }
+  return `工具调用 ${tool} | 参数键: ${keys.join(', ') || '-'}`
+}
+
+function summarizeToolResultPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+
+  const toolPayload = payload as {
+    tool?: unknown
+    data?: Record<string, unknown>
+  }
+  const tool = typeof toolPayload.tool === 'string' && toolPayload.tool.trim().length > 0 ? toolPayload.tool : 'unknown'
+  const data = toolPayload.data && typeof toolPayload.data === 'object' ? toolPayload.data : {}
+  const ok = typeof data.ok === 'boolean' ? data.ok : null
+  const error = typeof data.error === 'string' ? data.error : ''
+  const hasContent = Array.isArray(data.content)
+
+  if (ok === false) {
+    return `工具结果 ${tool} | 失败: ${error || '未知错误'}`
+  }
+  if (hasContent) {
+    return `工具结果 ${tool} | 成功 | content items: ${(data.content as unknown[]).length}`
+  }
+  return `工具结果 ${tool} | ${ok === true ? '成功' : '已返回'}`
+}
+
 export function summarizePayload(payload: unknown, eventType?: string): string {
   if (eventType === 'RETRIEVAL_RESULT') {
     const retrievalSummary = summarizeRetrievalPayload(payload)
@@ -119,6 +202,27 @@ export function summarizePayload(payload: unknown, eventType?: string): string {
     const ragSyncSummary = summarizeRagSyncPayload(payload)
     if (ragSyncSummary) {
       return ragSyncSummary
+    }
+  }
+
+  if (eventType === 'MCP_TOOLS_BOUND') {
+    const mcpToolsSummary = summarizeMcpToolsBoundPayload(payload)
+    if (mcpToolsSummary) {
+      return mcpToolsSummary
+    }
+  }
+
+  if (eventType === 'TOOL_CALL') {
+    const toolCallSummary = summarizeToolCallPayload(payload)
+    if (toolCallSummary) {
+      return toolCallSummary
+    }
+  }
+
+  if (eventType === 'TOOL_RESULT') {
+    const toolResultSummary = summarizeToolResultPayload(payload)
+    if (toolResultSummary) {
+      return toolResultSummary
     }
   }
 

@@ -2,6 +2,7 @@ package com.mingming.agent.orchestrator;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.mingming.agent.entity.AgentRunEntity;
 import com.mingming.agent.entity.ChatSessionEntity;
 import com.mingming.agent.entity.RunEventEntity;
@@ -331,16 +332,30 @@ public class AgentOrchestrator {
             List<Message> promptMessages,
             java.util.function.Consumer<String> sseDataConsumer) {
         StringBuilder contentBuilder = new StringBuilder();
-        List<Object> runtimeTools = new ArrayList<>(localToolProviders.stream()
+        List<Object> localRuntimeTools = new ArrayList<>(localToolProviders.stream()
                 .map(LocalToolProvider::toolBean)
                 .toList());
-        List<ToolCallback> mcpRuntimeTools = mcpRuntimeToolCallbackFactory.createCallbacks();
-        runtimeTools.addAll(mcpRuntimeTools);
+        McpRuntimeToolCallbackFactory.RuntimeToolBundle runtimeToolBundle = mcpRuntimeToolCallbackFactory.prepareRuntimeTools();
+        List<ToolCallback> mcpRuntimeTools = runtimeToolBundle.callbacks();
+
+        ObjectNode mcpToolsBoundPayload = objectMapper.createObjectNode();
+        mcpToolsBoundPayload.put("localToolCount", localRuntimeTools.size());
+        mcpToolsBoundPayload.put("mcpToolCount", mcpRuntimeTools.size());
+        mcpToolsBoundPayload.put("totalToolCount", localRuntimeTools.size() + mcpRuntimeTools.size());
+        ArrayNode injectedTools = objectMapper.valueToTree(runtimeToolBundle.boundTools());
+        mcpToolsBoundPayload.set("injectedMcpTools", injectedTools);
+        ArrayNode blockedTools = objectMapper.valueToTree(runtimeToolBundle.blockedTools());
+        mcpToolsBoundPayload.set("blockedMcpTools", blockedTools);
+        ArrayNode discoveryErrors = objectMapper.valueToTree(runtimeToolBundle.discoveryErrors());
+        mcpToolsBoundPayload.set("mcpDiscoveryErrors", discoveryErrors);
+        appendEvent(runId, seq.getAndIncrement(), RunEventType.MCP_TOOLS_BOUND, mcpToolsBoundPayload);
+
         ChatClient.builder(chatModel)
                 .build()
                 .prompt()
                 .messages(promptMessages.toArray(new Message[0]))
-                .tools(runtimeTools.toArray())
+                .tools(localRuntimeTools.toArray())
+                .toolCallbacks(mcpRuntimeTools.toArray(new ToolCallback[0]))
                 .toolContext(Map.of(
                         "runId", runId.toString(),
                         "seqCounter", seq))

@@ -30,7 +30,7 @@ public class McpServerRegistry {
             McpServersConfig cfg = yamlMapper.readValue(in, McpServersConfig.class);
             McpServersConfig result = cfg == null ? new McpServersConfig(Collections.emptyList()) : cfg;
             int size = result.servers() == null ? 0 : result.servers().size();
-            log.info("MCP servers loaded from classpath: path=mcp/servers.yml, count={}", size);
+            log.debug("MCP servers loaded from classpath: path=mcp/servers.yml, count={}", size);
             return result;
         } catch (Exception e) {
             log.warn("MCP servers load failed: path=mcp/servers.yml, message={}", e.getMessage());
