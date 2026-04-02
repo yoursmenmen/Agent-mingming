@@ -1,4 +1,4 @@
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { fetchMcpServers, fetchRagDocuments, fetchRagSources, fetchRagSyncStatus, fetchRunEvents, fetchSessionEvents, fetchTools, postChatStream, setMcpServerEnabled, triggerRagSync } from '../services/api'
 import { createStreamTimelineItem, mapRunEventToTimelineItem, mergeTimelineItems } from '../services/eventMapper'
 import { parseStructuredPayload } from '../services/structured'
@@ -56,6 +56,8 @@ export function useChatConsole() {
   const mcpUpdatingServers = ref<string[]>([])
   const activeAssistantId = ref<string | null>(null)
   const streamSeq = ref(1)
+  const runEventsPollingTimer = ref<number | null>(null)
+  const runEventsPollingActive = ref(false)
 
   const timelineItems = computed(() => mergeTimelineItems(streamItems.value, historyItems.value))
   const timelineCount = computed(() => timelineItems.value.length)
@@ -155,6 +157,50 @@ export function useChatConsole() {
     }
   }
 
+  function toTimelineEvents(events: RunEventItem[]): TimelineItem[] {
+    return events
+      .filter((event) => event.type !== 'MODEL_DELTA')
+      .map(mapRunEventToTimelineItem)
+  }
+
+  function stopRunEventsPolling() {
+    if (runEventsPollingTimer.value !== null) {
+      window.clearInterval(runEventsPollingTimer.value)
+      runEventsPollingTimer.value = null
+    }
+    runEventsPollingActive.value = false
+  }
+
+  async function syncCurrentRunEvents(currentRunId: string) {
+    if (!currentRunId || currentRunId === '等待新会话' || currentRunId === '建立连接中…') {
+      return
+    }
+    if (runEventsPollingActive.value) {
+      return
+    }
+
+    runEventsPollingActive.value = true
+    try {
+      const events = await fetchRunEvents(currentRunId)
+      historyItems.value = toTimelineEvents(events)
+      if (events.length > 0 && streamItems.value.length > 0) {
+        streamItems.value = streamItems.value.filter((item) => item.type === 'ERROR')
+      }
+    } catch {
+      // ignore periodic polling failures; final refresh reconciles full history
+    } finally {
+      runEventsPollingActive.value = false
+    }
+  }
+
+  function startRunEventsPolling(currentRunId: string) {
+    stopRunEventsPolling()
+    void syncCurrentRunEvents(currentRunId)
+    runEventsPollingTimer.value = window.setInterval(() => {
+      void syncCurrentRunEvents(currentRunId)
+    }, 700)
+  }
+
   async function refreshRunEvents() {
     const hasSession = Boolean(sessionId.value)
     const hasRun = Boolean(runId.value && runId.value !== '等待新会话')
@@ -167,7 +213,7 @@ export function useChatConsole() {
       const events = sessionId.value
         ? await fetchSessionEvents(sessionId.value)
         : await fetchRunEvents(runId.value)
-      historyItems.value = events.map(mapRunEventToTimelineItem)
+      historyItems.value = toTimelineEvents(events)
       streamItems.value = []
       attachAssistantStructuredFromPersistedModelMessage(events)
     } catch (error) {
@@ -190,6 +236,15 @@ export function useChatConsole() {
     runId.value = '建立连接中…'
     streamItems.value = []
     streamSeq.value = 1
+    streamItems.value.push(
+      createStreamTimelineItem({
+        id: createId('timeline-user'),
+        seq: streamSeq.value++,
+        type: 'USER_MESSAGE',
+        createdAt: new Date().toISOString(),
+        payload: JSON.stringify({ content }),
+      }),
+    )
     createAssistantPlaceholder()
 
     let streamFailed = false
@@ -206,6 +261,7 @@ export function useChatConsole() {
           const payload = JSON.parse(packet.data) as StreamRunEvent
           sessionId.value = payload.sessionId
           runId.value = payload.runId
+          startRunEventsPolling(payload.runId)
           return
         }
 
@@ -244,6 +300,7 @@ export function useChatConsole() {
       runStatus.value = 'error'
       updateAssistantMessage(errorMessage.value, 'error')
     } finally {
+      stopRunEventsPolling()
       activeAssistantId.value = null
     }
   }
@@ -320,6 +377,10 @@ export function useChatConsole() {
     void refreshTools()
     void refreshMcpServers()
     void refreshRagStatus()
+  })
+
+  onUnmounted(() => {
+    stopRunEventsPolling()
   })
 
   function formatTime(value: string): string {
