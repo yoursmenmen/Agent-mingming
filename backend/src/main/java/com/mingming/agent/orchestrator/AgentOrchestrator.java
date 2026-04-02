@@ -6,6 +6,7 @@ import com.mingming.agent.entity.AgentRunEntity;
 import com.mingming.agent.entity.ChatSessionEntity;
 import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.event.RunEventType;
+import com.mingming.agent.mcp.McpRuntimeToolCallbackFactory;
 import com.mingming.agent.rag.DocsChunk;
 import com.mingming.agent.rag.DocsChunkingService;
 import com.mingming.agent.rag.HybridRetrievalService;
@@ -34,6 +35,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
@@ -62,6 +64,7 @@ public class AgentOrchestrator {
     private final VectorRagProperties vectorRagProperties;
     private final HybridRetrievalService hybridRetrievalService;
     private final RetrievalEventService retrievalEventService;
+    private final McpRuntimeToolCallbackFactory mcpRuntimeToolCallbackFactory;
 
     public record RunInit(UUID sessionId, UUID runId) {}
 
@@ -328,11 +331,16 @@ public class AgentOrchestrator {
             List<Message> promptMessages,
             java.util.function.Consumer<String> sseDataConsumer) {
         StringBuilder contentBuilder = new StringBuilder();
+        List<Object> runtimeTools = new ArrayList<>(localToolProviders.stream()
+                .map(LocalToolProvider::toolBean)
+                .toList());
+        List<ToolCallback> mcpRuntimeTools = mcpRuntimeToolCallbackFactory.createCallbacks();
+        runtimeTools.addAll(mcpRuntimeTools);
         ChatClient.builder(chatModel)
                 .build()
                 .prompt()
                 .messages(promptMessages.toArray(new Message[0]))
-                .tools(localToolProviders.stream().map(LocalToolProvider::toolBean).toArray())
+                .tools(runtimeTools.toArray())
                 .toolContext(Map.of(
                         "runId", runId.toString(),
                         "seqCounter", seq))

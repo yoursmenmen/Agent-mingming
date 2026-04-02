@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.mingming.agent.entity.RagSourceSyncStateEntity;
 import com.mingming.agent.rag.DocsChunk;
 import com.mingming.agent.rag.DocsChunkingService;
+import com.mingming.agent.repository.DocChunkRepository;
 import com.mingming.agent.repository.RagSourceSyncStateRepository;
 import java.util.Optional;
 import java.util.List;
@@ -28,18 +29,24 @@ class UrlSourceIngestionServiceTest {
         String officialSourceId = UrlSourceIdUtil.toSourceId("official-docs", "https://example.com/docs");
 
         DocsChunkingService chunkingService = mock(DocsChunkingService.class);
+        DocChunkRepository docChunkRepository = mock(DocChunkRepository.class);
         RagSourceSyncStateRepository sourceStateRepository = mock(RagSourceSyncStateRepository.class);
         when(sourceStateRepository.findById(officialSourceId)).thenReturn(Optional.empty());
         when(sourceStateRepository.save(org.mockito.ArgumentMatchers.any(RagSourceSyncStateEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        when(docChunkRepository.findBySourceIdAndDocPath(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(List.of());
         when(chunkingService.chunkMarkdown(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(List.of(new DocsChunk("c1", "url/official-docs.md", "A", "hello", 2)));
 
         UrlSourceIngestionService service =
-                org.mockito.Mockito.spy(new UrlSourceIngestionService(properties, chunkingService, sourceStateRepository));
+                org.mockito.Mockito.spy(new UrlSourceIngestionService(properties, chunkingService, docChunkRepository, sourceStateRepository));
         doReturn(new UrlSourceIngestionService.FetchResult(false, "<html><body><h1>Title</h1><p>Hello world</p></body></html>", null, null))
                 .when(service)
-                .fetchSource(org.mockito.ArgumentMatchers.eq("https://example.com/docs"), org.mockito.ArgumentMatchers.any(RagSourceSyncStateEntity.class));
+                .fetchSource(
+                        org.mockito.ArgumentMatchers.eq("https://example.com/docs"),
+                        org.mockito.ArgumentMatchers.any(RagSourceSyncStateEntity.class),
+                        org.mockito.ArgumentMatchers.anyBoolean());
 
         List<DocsChunk> chunks = service.loadChunks();
 
@@ -65,22 +72,31 @@ class UrlSourceIngestionServiceTest {
         String okSourceId = UrlSourceIdUtil.toSourceId("ok", "https://example.com/ok");
 
         DocsChunkingService chunkingService = mock(DocsChunkingService.class);
+        DocChunkRepository docChunkRepository = mock(DocChunkRepository.class);
         RagSourceSyncStateRepository sourceStateRepository = mock(RagSourceSyncStateRepository.class);
         when(sourceStateRepository.findById(brokenSourceId)).thenReturn(Optional.empty());
         when(sourceStateRepository.findById(okSourceId)).thenReturn(Optional.empty());
         when(sourceStateRepository.save(org.mockito.ArgumentMatchers.any(RagSourceSyncStateEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        when(docChunkRepository.findBySourceIdAndDocPath(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(List.of());
         when(chunkingService.chunkMarkdown(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(List.of(new DocsChunk("ok-1", "url/ok.md", "A", "ok", 1)));
 
         UrlSourceIngestionService service =
-                org.mockito.Mockito.spy(new UrlSourceIngestionService(properties, chunkingService, sourceStateRepository));
+                org.mockito.Mockito.spy(new UrlSourceIngestionService(properties, chunkingService, docChunkRepository, sourceStateRepository));
         doThrow(new IllegalStateException("boom"))
                 .when(service)
-                .fetchSource(org.mockito.ArgumentMatchers.eq("https://example.com/broken"), org.mockito.ArgumentMatchers.any(RagSourceSyncStateEntity.class));
+                .fetchSource(
+                        org.mockito.ArgumentMatchers.eq("https://example.com/broken"),
+                        org.mockito.ArgumentMatchers.any(RagSourceSyncStateEntity.class),
+                        org.mockito.ArgumentMatchers.anyBoolean());
         doReturn(new UrlSourceIngestionService.FetchResult(false, "plain text", null, null))
                 .when(service)
-                .fetchSource(org.mockito.ArgumentMatchers.eq("https://example.com/ok"), org.mockito.ArgumentMatchers.any(RagSourceSyncStateEntity.class));
+                .fetchSource(
+                        org.mockito.ArgumentMatchers.eq("https://example.com/ok"),
+                        org.mockito.ArgumentMatchers.any(RagSourceSyncStateEntity.class),
+                        org.mockito.ArgumentMatchers.anyBoolean());
 
         List<DocsChunk> chunks = service.loadChunks();
 

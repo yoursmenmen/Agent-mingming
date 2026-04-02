@@ -26,6 +26,12 @@ describe('Inspector pane layout', () => {
     const tools = mount(ToolsPanel, {
       props: {
         tools: [],
+        mcpServers: [],
+        isMcpRefreshing: false,
+        mcpUpdatingServers: [],
+        onRefreshTools: () => {},
+        onRefreshMcpServers: () => {},
+        onToggleMcpServer: () => {},
       },
     })
 

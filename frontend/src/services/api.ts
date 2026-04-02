@@ -1,5 +1,5 @@
 import type { ChatRequest } from '../types/chat'
-import type { RagDocuments, RagSourceInfo, RagSyncStatus, RunEventItem, ToolInfo } from '../types/run'
+import type { McpServerInfo, RagDocuments, RagSourceInfo, RagSyncStatus, RunEventItem, ToolInfo } from '../types/run'
 
 const DEV_TOKEN = 'dev-token-change-me'
 
@@ -55,6 +55,48 @@ export async function fetchTools(): Promise<ToolInfo[]> {
 
   const data = (await response.json()) as { tools?: ToolInfo[] }
   return data.tools ?? []
+}
+
+export async function fetchMcpServers(): Promise<McpServerInfo[]> {
+  const response = await fetch('/api/mcp/servers', {
+    headers: {
+      Authorization: `Bearer ${DEV_TOKEN}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`获取 MCP 服务失败：${response.status}`)
+  }
+
+  const payload = (await response.json()) as { servers?: Array<Partial<McpServerInfo>> }
+  const servers = payload.servers ?? []
+  return servers.map((server) => ({
+    name: server.name ?? '',
+    transport: server.transport ?? 'unknown',
+    url: server.url ?? '',
+    streaming: server.streaming ?? '',
+    timeoutMs: Number(server.timeoutMs ?? 0),
+    configuredEnabled: Boolean(server.configuredEnabled),
+    effectiveEnabled: Boolean(server.effectiveEnabled),
+    lastStatus: server.lastStatus,
+    lastError: server.lastError,
+    tools: Array.isArray(server.tools) ? server.tools : [],
+  }))
+}
+
+export async function setMcpServerEnabled(server: string, enabled: boolean): Promise<void> {
+  const response = await fetch('/api/mcp/servers/enabled', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${DEV_TOKEN}`,
+    },
+    body: JSON.stringify({ server, enabled }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`更新 MCP 开关失败：${response.status}`)
+  }
 }
 
 export async function fetchRagSyncStatus(): Promise<RagSyncStatus> {

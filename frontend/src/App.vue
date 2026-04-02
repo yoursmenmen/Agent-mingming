@@ -19,6 +19,7 @@ const {
   timelineItems,
   timelineCount,
   availableTools,
+  mcpServers,
   ragSyncStatus,
   ragSources,
   ragDocuments,
@@ -27,8 +28,13 @@ const {
   isRefreshing,
   isRagRefreshing,
   isRagTriggering,
+  isMcpRefreshing,
+  mcpUpdatingServers,
   sendMessage,
   refreshRunEvents,
+  refreshTools,
+  refreshMcpServers,
+  toggleMcpServer,
   refreshRagStatus,
   triggerRagSyncNow,
   formatTime,
@@ -99,6 +105,12 @@ const activeInspectorProps = computed(() => {
 
   return {
     tools: readState(availableTools),
+    mcpServers: readState(mcpServers),
+    isMcpRefreshing: readState(isMcpRefreshing),
+    mcpUpdatingServers: readState(mcpUpdatingServers),
+    onRefreshTools: refreshTools,
+    onRefreshMcpServers: refreshMcpServers,
+    onToggleMcpServer: toggleMcpServer,
   }
 })
 

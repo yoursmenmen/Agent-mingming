@@ -1,10 +1,10 @@
 import { computed, onMounted, ref } from 'vue'
-import { fetchRagDocuments, fetchRagSources, fetchRagSyncStatus, fetchRunEvents, fetchSessionEvents, fetchTools, postChatStream, triggerRagSync } from '../services/api'
+import { fetchMcpServers, fetchRagDocuments, fetchRagSources, fetchRagSyncStatus, fetchRunEvents, fetchSessionEvents, fetchTools, postChatStream, setMcpServerEnabled, triggerRagSync } from '../services/api'
 import { createStreamTimelineItem, mapRunEventToTimelineItem, mergeTimelineItems } from '../services/eventMapper'
 import { parseStructuredPayload } from '../services/structured'
 import { consumeSseStream } from '../services/sse'
 import type { ChatMessage, StreamErrorEvent, StreamMessageEvent, StreamRunEvent } from '../types/chat'
-import type { RagDocuments, RagSourceInfo, RagSyncStatus, RunEventItem, RunStatus, TimelineItem, ToolInfo } from '../types/run'
+import type { McpServerInfo, RagDocuments, RagSourceInfo, RagSyncStatus, RunEventItem, RunStatus, TimelineItem, ToolInfo } from '../types/run'
 
 type ModelMessagePayload = {
   content?: unknown
@@ -45,12 +45,15 @@ export function useChatConsole() {
   const historyItems = ref<TimelineItem[]>([])
   const errorMessage = ref('')
   const availableTools = ref<ToolInfo[]>([])
+  const mcpServers = ref<McpServerInfo[]>([])
   const ragSyncStatus = ref<RagSyncStatus | null>(null)
   const ragSources = ref<RagSourceInfo[]>([])
   const ragDocuments = ref<RagDocuments>({ localDocs: [], urlDocs: [] })
   const isRefreshing = ref(false)
   const isRagRefreshing = ref(false)
   const isRagTriggering = ref(false)
+  const isMcpRefreshing = ref(false)
+  const mcpUpdatingServers = ref<string[]>([])
   const activeAssistantId = ref<string | null>(null)
   const streamSeq = ref(1)
 
@@ -253,6 +256,33 @@ export function useChatConsole() {
     }
   }
 
+  async function refreshMcpServers() {
+    isMcpRefreshing.value = true
+    try {
+      mcpServers.value = await fetchMcpServers()
+    } catch (error) {
+      mcpServers.value = []
+      errorMessage.value = error instanceof Error ? error.message : '获取 MCP 服务失败'
+    } finally {
+      isMcpRefreshing.value = false
+    }
+  }
+
+  async function toggleMcpServer(server: string, enabled: boolean) {
+    if (!server || mcpUpdatingServers.value.includes(server)) {
+      return
+    }
+    mcpUpdatingServers.value = [...mcpUpdatingServers.value, server]
+    try {
+      await setMcpServerEnabled(server, enabled)
+      await refreshMcpServers()
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : '更新 MCP 开关失败'
+    } finally {
+      mcpUpdatingServers.value = mcpUpdatingServers.value.filter((name) => name !== server)
+    }
+  }
+
   async function refreshRagStatus() {
     isRagRefreshing.value = true
     try {
@@ -288,6 +318,7 @@ export function useChatConsole() {
 
   onMounted(() => {
     void refreshTools()
+    void refreshMcpServers()
     void refreshRagStatus()
   })
 
@@ -308,6 +339,7 @@ export function useChatConsole() {
     timelineItems,
     timelineCount,
     availableTools,
+    mcpServers,
     ragSyncStatus,
     ragSources,
     ragDocuments,
@@ -316,9 +348,13 @@ export function useChatConsole() {
     isRefreshing,
     isRagRefreshing,
     isRagTriggering,
+    isMcpRefreshing,
+    mcpUpdatingServers,
     sendMessage,
     refreshRunEvents,
     refreshTools,
+    refreshMcpServers,
+    toggleMcpServer,
     refreshRagStatus,
     triggerRagSyncNow,
     formatTime,

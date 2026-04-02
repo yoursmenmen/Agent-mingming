@@ -1,11 +1,12 @@
-# MCP servers configuration (MVP placeholder)
+# MCP servers configuration
 #
-# Example:
-# servers:
-#   - name: demo
-#     transport: http
-#     url: http://localhost:9000
-#     streaming: sse
-#     enabled: true
-#     timeoutMs: 10000
-servers: []
+# To use local python MCP server:
+# 1) python tools/mcp/local_ops_mcp.py
+# 2) set enabled=true below
+servers:
+  - name: local-ops
+    transport: http
+    url: http://127.0.0.1:9100
+    streaming: none
+    enabled: true
+    timeoutMs: 12000
