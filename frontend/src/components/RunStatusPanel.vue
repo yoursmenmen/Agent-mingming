@@ -23,24 +23,25 @@ const emit = defineEmits<{
       </button>
     </div>
 
-    <dl class="status-grid">
-      <div>
-        <dt>当前状态</dt>
-        <dd>{{ statusLabel }}</dd>
-      </div>
-      <div>
-        <dt>Run ID</dt>
-        <dd class="run-id">{{ runId }}</dd>
-      </div>
-      <div>
-        <dt>时间线条数</dt>
-        <dd>{{ timelineCount }}</dd>
-      </div>
-      <div>
-        <dt>视图模式</dt>
-        <dd>聊天 + 时间线</dd>
-      </div>
-    </dl>
-
+    <div class="status-panel-body">
+      <dl class="status-grid">
+        <div>
+          <dt>当前状态</dt>
+          <dd>{{ statusLabel }}</dd>
+        </div>
+        <div>
+          <dt>Run ID</dt>
+          <dd class="run-id">{{ runId }}</dd>
+        </div>
+        <div>
+          <dt>时间线条数</dt>
+          <dd>{{ timelineCount }}</dd>
+        </div>
+        <div>
+          <dt>视图模式</dt>
+          <dd>聊天 + 时间线</dd>
+        </div>
+      </dl>
+    </div>
   </section>
 </template>

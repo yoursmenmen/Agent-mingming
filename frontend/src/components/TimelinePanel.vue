@@ -21,7 +21,7 @@ defineProps<{
       </p>
     </div>
 
-    <div class="timeline-panel-body">
+    <div class="timeline-panel-body pane-body">
       <div v-if="!timelineItems.length" class="empty-state">发送第一条消息后，这里会出现会话级事件时间线。</div>
 
       <ol v-else class="timeline-list">

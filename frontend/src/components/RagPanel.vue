@@ -37,91 +37,90 @@ const showUrlDocs = ref(false)
       </div>
     </div>
 
-    <div class="rag-quick-toggles">
-      <button class="ghost-button rag-toggle" type="button" @click="showSources = !showSources">
-        {{ showSources ? '收起' : '展开' }} URL 源
-      </button>
-      <button class="ghost-button rag-toggle" type="button" @click="showLocalDocs = !showLocalDocs">
-        {{ showLocalDocs ? '收起' : '展开' }} 本地文档
-      </button>
-      <button class="ghost-button rag-toggle" type="button" @click="showUrlDocs = !showUrlDocs">
-        {{ showUrlDocs ? '收起' : '展开' }} URL 文档
-      </button>
-    </div>
-
-    <dl class="status-grid rag-status-grid" v-if="ragSyncStatus">
-      <div>
-        <dt>同步状态</dt>
-        <dd>{{ ragSyncStatus.state }}</dd>
-      </div>
-      <div>
-        <dt>Chunk / Embedding</dt>
-        <dd>{{ ragSyncStatus.chunkCount }} / {{ ragSyncStatus.embeddingCount }}</dd>
-      </div>
-      <div>
-        <dt>本地文档数</dt>
-        <dd>{{ ragSyncStatus.sourceStats.localDocs }}</dd>
-      </div>
-      <div>
-        <dt>已索引 URL 源数</dt>
-        <dd>{{ ragSyncStatus.sourceStats.urlSources }}</dd>
-      </div>
-      <div>
-        <dt>配置 URL 源数</dt>
-        <dd>{{ props.ragSources.length }}</dd>
-      </div>
-    </dl>
-
-    <p v-if="ragSyncStatus?.lastError" class="rag-error">{{ ragSyncStatus.lastError }}</p>
-
-    <div class="rag-source-preview" v-if="props.ragSources.length > 0">
-      <p>已配置 URL（预览）</p>
-      <ul>
-        <li v-for="item in props.ragSources.slice(0, 2)" :key="item.name + item.url">{{ item.url }}</li>
-      </ul>
-    </div>
-
     <div class="rag-panel-body">
+      <dl class="status-grid rag-status-grid" v-if="ragSyncStatus">
+        <div>
+          <dt>同步状态</dt>
+          <dd>{{ ragSyncStatus.state }}</dd>
+        </div>
+        <div>
+          <dt>Chunk / Embedding</dt>
+          <dd>{{ ragSyncStatus.chunkCount }} / {{ ragSyncStatus.embeddingCount }}</dd>
+        </div>
+        <div>
+          <dt>本地文档数</dt>
+          <dd>{{ ragSyncStatus.sourceStats.localDocs }}</dd>
+        </div>
+        <div>
+          <dt>已索引 URL 源数</dt>
+          <dd>{{ ragSyncStatus.sourceStats.urlSources }}</dd>
+        </div>
+        <div>
+          <dt>配置 URL 源数</dt>
+          <dd>{{ props.ragSources.length }}</dd>
+        </div>
+      </dl>
+
+      <p v-if="ragSyncStatus?.lastError" class="rag-error">{{ ragSyncStatus.lastError }}</p>
+
       <section class="rag-section">
         <div class="rag-section-header">
           <h3>URL 源配置（{{ props.ragSources.length }}）</h3>
+          <button class="ghost-button rag-section-toggle" type="button" @click="showSources = !showSources">
+            {{ showSources ? '收起' : '展开' }}
+          </button>
         </div>
         <div v-if="showSources">
-        <ul class="rag-source-list" v-if="props.ragSources.length > 0">
-          <li v-for="item in props.ragSources" :key="item.name + item.url">
-            <strong>{{ item.name }}</strong>
-            <span>{{ item.enabled ? '启用' : '停用' }} · {{ item.lastStatus }}</span>
-            <small class="rag-url">{{ item.url }}</small>
-            <small v-if="item.lastError" class="rag-error-inline">{{ item.lastError }}</small>
-          </li>
-        </ul>
-        <p v-else class="rag-empty">未配置 URL 源</p>
+          <ul class="rag-source-list" v-if="props.ragSources.length > 0">
+            <li v-for="item in props.ragSources.slice(0, 6)" :key="item.name + item.url">
+              <strong>{{ item.name }}</strong>
+              <p
+                class="rag-source-meta"
+                :class="item.enabled ? 'rag-source-meta--enabled' : 'rag-source-meta--disabled'"
+              >
+                <span class="rag-source-dot" aria-hidden="true"></span>
+                <span>{{ item.enabled ? '已启用' : '未启用' }}</span>
+                <span>·</span>
+                <span>{{ item.lastStatus }}</span>
+              </p>
+              <small class="rag-url">{{ item.url }}</small>
+              <small v-if="item.lastError" class="rag-error-inline">{{ item.lastError }}</small>
+            </li>
+          </ul>
+          <p v-else class="rag-empty">未配置 URL 源</p>
         </div>
       </section>
 
       <section class="rag-section">
         <div class="rag-section-header">
           <h3>本地文档列表（{{ props.ragDocuments.localDocs.length }}）</h3>
+          <button class="ghost-button rag-section-toggle" type="button" @click="showLocalDocs = !showLocalDocs">
+            {{ showLocalDocs ? '收起' : '展开' }}
+          </button>
         </div>
         <div v-if="showLocalDocs">
-        <ul class="rag-doc-list" v-if="props.ragDocuments.localDocs.length > 0">
-          <li v-for="path in props.ragDocuments.localDocs" :key="path">{{ path }}</li>
-        </ul>
-        <p v-else class="rag-empty">暂无本地文档索引</p>
+          <ul class="rag-doc-list" v-if="props.ragDocuments.localDocs.length > 0">
+            <li v-for="path in props.ragDocuments.localDocs.slice(0, 12)" :key="path">{{ path }}</li>
+          </ul>
+          <p v-else class="rag-empty">暂无本地文档索引</p>
         </div>
       </section>
 
       <section class="rag-section">
         <div class="rag-section-header">
           <h3>URL 文档列表（{{ props.ragDocuments.urlDocs.length }}）</h3>
+          <button class="ghost-button rag-section-toggle" type="button" @click="showUrlDocs = !showUrlDocs">
+            {{ showUrlDocs ? '收起' : '展开' }}
+          </button>
         </div>
         <div v-if="showUrlDocs">
-        <ul class="rag-doc-list" v-if="props.ragDocuments.urlDocs.length > 0">
-          <li v-for="path in props.ragDocuments.urlDocs" :key="path">{{ path }}</li>
-        </ul>
-        <p v-else class="rag-empty">暂无 URL 文档索引</p>
+          <ul class="rag-doc-list" v-if="props.ragDocuments.urlDocs.length > 0">
+            <li v-for="path in props.ragDocuments.urlDocs.slice(0, 12)" :key="path">{{ path }}</li>
+          </ul>
+          <p v-else class="rag-empty">暂无 URL 文档索引</p>
         </div>
       </section>
     </div>
   </section>
 </template>
+

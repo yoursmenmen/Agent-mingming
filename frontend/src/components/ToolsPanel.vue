@@ -16,7 +16,7 @@ defineProps<{
       <p class="panel-tip">GET /api/tools</p>
     </div>
 
-    <div class="tools-panel-body">
+    <div class="tools-panel-body pane-body">
       <div v-if="!tools.length" class="empty-state">暂未发现可用工具。</div>
 
       <ul v-else class="tools-list">

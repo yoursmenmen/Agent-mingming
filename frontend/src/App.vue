@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, markRaw, ref } from 'vue'
+import type { Component } from 'vue'
 import ChatPanel from './components/ChatPanel.vue'
 import HeroHeader from './components/HeroHeader.vue'
 import RagPanel from './components/RagPanel.vue'
@@ -33,27 +34,79 @@ const {
   formatTime,
 } = useChatConsole()
 
-const isSidebarOpen = ref(false)
-const expandedSidebarPanel = ref<'status' | 'rag' | 'timeline' | 'tools'>('status')
+type InspectorPaneId = 'status' | 'rag' | 'timeline' | 'tools'
 
-const sidebarTitle = computed(() => {
-  if (expandedSidebarPanel.value === 'status') {
-    return '运行状态'
+type InspectorPane = {
+  id: InspectorPaneId
+  label: string
+  icon: string
+  title: string
+  component: Component
+}
+
+function readState<T>(value: T | { value: T }): T {
+  if (typeof value === 'object' && value !== null && 'value' in value) {
+    return value.value
   }
-  if (expandedSidebarPanel.value === 'timeline') {
-    return '事件时间线'
+  return value
+}
+
+const inspectorPanes: InspectorPane[] = [
+  { id: 'status', label: '状态', icon: '◎', title: '运行状态', component: markRaw(RunStatusPanel) },
+  { id: 'rag', label: 'RAG', icon: '◈', title: 'RAG 同步', component: markRaw(RagPanel) },
+  { id: 'timeline', label: '时间线', icon: '≋', title: '事件时间线', component: markRaw(TimelinePanel) },
+  { id: 'tools', label: '工具', icon: '⚒', title: '可用工具', component: markRaw(ToolsPanel) },
+]
+
+const isSidebarOpen = ref(false)
+const expandedSidebarPanel = ref<InspectorPaneId>('status')
+
+const activeInspectorPane = computed(() => {
+  return inspectorPanes.find((pane) => pane.id === expandedSidebarPanel.value) ?? inspectorPanes[0]
+})
+
+const activeInspectorProps = computed(() => {
+  if (activeInspectorPane.value.id === 'status') {
+    return {
+      statusLabel: readState(statusLabel),
+      runId: readState(runId),
+      timelineCount: readState(timelineCount),
+      isRefreshing: readState(isRefreshing),
+      onRefresh: refreshRunEvents,
+    }
   }
-  if (expandedSidebarPanel.value === 'rag') {
-    return 'RAG 同步'
+
+  if (activeInspectorPane.value.id === 'rag') {
+    return {
+      ragSyncStatus: readState(ragSyncStatus),
+      ragSources: readState(ragSources),
+      ragDocuments: readState(ragDocuments),
+      isRagRefreshing: readState(isRagRefreshing),
+      isRagTriggering: readState(isRagTriggering),
+      onRefreshRag: refreshRagStatus,
+      onTriggerRag: triggerRagSyncNow,
+    }
   }
-  return '可用工具'
+
+  if (activeInspectorPane.value.id === 'timeline') {
+    return {
+      sessionId: readState(sessionId),
+      runId: readState(runId),
+      timelineItems: readState(timelineItems),
+      formatTime,
+    }
+  }
+
+  return {
+    tools: readState(availableTools),
+  }
 })
 
 function toggleSidebar() {
   isSidebarOpen.value = !isSidebarOpen.value
 }
 
-function openSidebarPanel(panel: 'status' | 'rag' | 'timeline' | 'tools') {
+function openSidebarPanel(panel: InspectorPaneId) {
   expandedSidebarPanel.value = panel
   isSidebarOpen.value = true
 }
@@ -73,8 +126,8 @@ function openSidebarPanel(panel: 'status' | 'rag' | 'timeline' | 'tools') {
         @send="sendMessage"
       />
 
-      <aside class="sidebar" :class="{ 'sidebar--open': isSidebarOpen }">
-        <div class="sidebar-rail" role="tablist" aria-label="侧栏面板切换">
+      <aside class="inspector-shell" :class="{ 'inspector-shell--open': isSidebarOpen }">
+        <div class="inspector-nav" role="tablist" aria-label="侧栏面板切换">
           <button
             class="sidebar-toggle"
             type="button"
@@ -87,89 +140,32 @@ function openSidebarPanel(panel: 'status' | 'rag' | 'timeline' | 'tools') {
           </button>
 
           <button
+            v-for="pane in inspectorPanes"
+            :key="pane.id"
             class="sidebar-tab"
             type="button"
             role="tab"
-            :aria-selected="isSidebarOpen && expandedSidebarPanel === 'status'"
-            :class="{ 'sidebar-tab--active': isSidebarOpen && expandedSidebarPanel === 'status' }"
-            @click="openSidebarPanel('status')"
+            :aria-selected="isSidebarOpen && expandedSidebarPanel === pane.id"
+            :class="{ 'sidebar-tab--active': isSidebarOpen && expandedSidebarPanel === pane.id }"
+            @click="openSidebarPanel(pane.id)"
           >
-            <span class="sidebar-icon">◎</span>
-            <span class="sidebar-text">状态</span>
-          </button>
-          <button
-            class="sidebar-tab"
-            type="button"
-            role="tab"
-            :aria-selected="isSidebarOpen && expandedSidebarPanel === 'rag'"
-            :class="{ 'sidebar-tab--active': isSidebarOpen && expandedSidebarPanel === 'rag' }"
-            @click="openSidebarPanel('rag')"
-          >
-            <span class="sidebar-icon">◈</span>
-            <span class="sidebar-text">RAG</span>
-          </button>
-          <button
-            class="sidebar-tab"
-            type="button"
-            role="tab"
-            :aria-selected="isSidebarOpen && expandedSidebarPanel === 'timeline'"
-            :class="{ 'sidebar-tab--active': isSidebarOpen && expandedSidebarPanel === 'timeline' }"
-            @click="openSidebarPanel('timeline')"
-          >
-            <span class="sidebar-icon">≋</span>
-            <span class="sidebar-text">时间线</span>
-          </button>
-          <button
-            class="sidebar-tab"
-            type="button"
-            role="tab"
-            :aria-selected="isSidebarOpen && expandedSidebarPanel === 'tools'"
-            :class="{ 'sidebar-tab--active': isSidebarOpen && expandedSidebarPanel === 'tools' }"
-            @click="openSidebarPanel('tools')"
-          >
-            <span class="sidebar-icon">⚒</span>
-            <span class="sidebar-text">工具</span>
+            <span class="sidebar-icon">{{ pane.icon }}</span>
+            <span class="sidebar-text">{{ pane.label }}</span>
           </button>
         </div>
 
-        <div v-if="isSidebarOpen" class="sidebar-content">
-          <div class="sidebar-panel-header">
+        <div v-if="isSidebarOpen" class="inspector-main">
+          <div class="inspector-header">
             <div>
               <p class="panel-kicker">Inspector</p>
-              <h2>{{ sidebarTitle }}</h2>
+              <h2>{{ activeInspectorPane.title }}</h2>
             </div>
             <button class="ghost-button sidebar-close" type="button" @click="toggleSidebar">关闭</button>
           </div>
 
-          <RunStatusPanel
-            v-show="expandedSidebarPanel === 'status'"
-            :status-label="statusLabel"
-            :run-id="runId"
-            :timeline-count="timelineCount"
-            :is-refreshing="isRefreshing"
-            @refresh="refreshRunEvents"
-          />
-          <RagPanel
-            v-show="expandedSidebarPanel === 'rag'"
-            :rag-sync-status="ragSyncStatus"
-            :rag-sources="ragSources"
-            :rag-documents="ragDocuments"
-            :is-rag-refreshing="isRagRefreshing"
-            :is-rag-triggering="isRagTriggering"
-            @refresh-rag="refreshRagStatus"
-            @trigger-rag="triggerRagSyncNow"
-          />
-          <TimelinePanel
-            v-show="expandedSidebarPanel === 'timeline'"
-            :session-id="sessionId"
-            :run-id="runId"
-            :timeline-items="timelineItems"
-            :format-time="formatTime"
-          />
-          <ToolsPanel
-            v-show="expandedSidebarPanel === 'tools'"
-            :tools="availableTools"
-          />
+          <div class="inspector-pane-host">
+            <component :is="activeInspectorPane.component" v-bind="activeInspectorProps" />
+          </div>
         </div>
       </aside>
     </main>
