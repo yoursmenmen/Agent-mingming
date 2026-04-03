@@ -13,6 +13,7 @@ describe('Inspector pane layout', () => {
         runId: 'run-1',
         timelineCount: 3,
         isRefreshing: false,
+        runMetrics: null,
       },
     })
     const timeline = mount(TimelinePanel, {

@@ -5,6 +5,7 @@ import {
   fetchRagDocuments,
   fetchRagSources,
   fetchRagSyncStatus,
+  fetchRunEventMetrics,
   fetchRunEvents,
   fetchSessionEvents,
   fetchTools,
@@ -23,6 +24,7 @@ import type {
   RagDocuments,
   RagSourceInfo,
   RagSyncStatus,
+  RunEventMetrics,
   RunEventItem,
   RunStatus,
   TimelineItem,
@@ -72,6 +74,7 @@ export function useChatConsole() {
   const ragSyncStatus = ref<RagSyncStatus | null>(null)
   const ragSources = ref<RagSourceInfo[]>([])
   const ragDocuments = ref<RagDocuments>({ localDocs: [], urlDocs: [] })
+  const runMetrics = ref<RunEventMetrics | null>(null)
   const isRefreshing = ref(false)
   const isRagRefreshing = ref(false)
   const isRagTriggering = ref(false)
@@ -82,22 +85,43 @@ export function useChatConsole() {
   const runEventsPollingTimer = ref<number | null>(null)
   const runEventsPollingActive = ref(false)
   const handlingActionIds = ref<string[]>([])
-  const resolvedActionIds = ref<string[]>([])
+  const localActionStates = ref<Record<string, 'PROCESSING' | 'CONFIRMED_EXECUTED' | 'CONFIRM_EXECUTION_FAILED' | 'REJECTED'>>({})
 
   const timelineItems = computed(() => mergeTimelineItems(streamItems.value, historyItems.value))
   const timelineCount = computed(() => timelineItems.value.length)
+  const timelineActionStates = computed(() => {
+    const states = new Map<string, TimelineItem['actionState']>()
+    for (const item of timelineItems.value) {
+      if (!item.actionId || !item.actionState) {
+        continue
+      }
+      states.set(item.actionId, item.actionState)
+    }
+    return states
+  })
   const pendingMcpActions = computed<PendingMcpAction[]>(() => {
     const actionsById = new Map<string, PendingMcpAction>()
     for (const item of [...timelineItems.value].reverse()) {
       if (item.actionState === 'PENDING_CONFIRMATION' && item.actionId) {
-        if (resolvedActionIds.value.includes(item.actionId)) {
+        const timelineState = timelineActionStates.value.get(item.actionId)
+        const localState = localActionStates.value[item.actionId]
+        if (
+          timelineState === 'CONFIRMED_EXECUTED' ||
+          timelineState === 'CONFIRM_EXECUTION_FAILED' ||
+          timelineState === 'REJECTED' ||
+          localState === 'CONFIRMED_EXECUTED' ||
+          localState === 'CONFIRM_EXECUTION_FAILED' ||
+          localState === 'REJECTED'
+        ) {
           continue
         }
+        const isProcessing = localState === 'PROCESSING'
         actionsById.set(item.actionId, {
           actionId: item.actionId,
           tool: item.type,
-          summary: item.summary,
+          summary: isProcessing ? `${item.summary}（处理中）` : item.summary,
           createdAt: item.createdAt,
+          state: isProcessing ? 'PROCESSING' : 'PENDING_CONFIRMATION',
         })
       }
     }
@@ -258,6 +282,8 @@ export function useChatConsole() {
       historyItems.value = toTimelineEvents(events)
       streamItems.value = []
       attachAssistantStructuredFromPersistedModelMessage(events)
+      cleanupLocalActionStates()
+      await refreshRunMetrics()
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : '拉取运行事件失败'
     } finally {
@@ -271,7 +297,6 @@ export function useChatConsole() {
       return
     }
 
-    resolvedActionIds.value = []
     await executeChatTurn(content, true)
   }
 
@@ -408,6 +433,14 @@ export function useChatConsole() {
     }
   }
 
+  async function refreshRunMetrics() {
+    try {
+      runMetrics.value = await fetchRunEventMetrics(24)
+    } catch {
+      runMetrics.value = null
+    }
+  }
+
   async function refreshMcpServers() {
     isMcpRefreshing.value = true
     try {
@@ -458,21 +491,55 @@ export function useChatConsole() {
       return
     }
     handlingActionIds.value = [...handlingActionIds.value, actionId]
+    localActionStates.value = {
+      ...localActionStates.value,
+      [actionId]: 'PROCESSING',
+    }
     try {
       if (decision === 'confirm') {
         const confirmResponse = await confirmMcpAction(actionId)
+        localActionStates.value = {
+          ...localActionStates.value,
+          [actionId]: confirmResponse.status === 'CONFIRMED_EXECUTED' ? 'CONFIRMED_EXECUTED' : 'CONFIRM_EXECUTION_FAILED',
+        }
         const followupMessage = summarizeConfirmResultForModel(confirmResponse)
         await executeChatTurn(followupMessage, false)
       } else {
         await rejectMcpAction(actionId)
+        localActionStates.value = {
+          ...localActionStates.value,
+          [actionId]: 'REJECTED',
+        }
       }
-      resolvedActionIds.value = [...resolvedActionIds.value, actionId]
       await refreshRunEvents()
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : '处理 MCP 动作失败'
+      localActionStates.value = {
+        ...localActionStates.value,
+        [actionId]: 'CONFIRM_EXECUTION_FAILED',
+      }
     } finally {
       handlingActionIds.value = handlingActionIds.value.filter((id) => id !== actionId)
     }
+  }
+
+  function cleanupLocalActionStates() {
+    if (Object.keys(localActionStates.value).length === 0) {
+      return
+    }
+    const next = { ...localActionStates.value }
+    for (const [actionId, state] of Object.entries(localActionStates.value)) {
+      const timelineState = timelineActionStates.value.get(actionId)
+      if (
+        timelineState === 'CONFIRMED_EXECUTED' ||
+        timelineState === 'CONFIRM_EXECUTION_FAILED' ||
+        timelineState === 'REJECTED' ||
+        (state !== 'PROCESSING' && !timelineState)
+      ) {
+        delete next[actionId]
+      }
+    }
+    localActionStates.value = next
   }
 
   async function confirmPendingMcpAction(actionId: string) {
@@ -506,6 +573,7 @@ export function useChatConsole() {
     void refreshTools()
     void refreshMcpServers()
     void refreshRagStatus()
+    void refreshRunMetrics()
   })
 
   onUnmounted(() => {
@@ -534,6 +602,7 @@ export function useChatConsole() {
     ragSyncStatus,
     ragSources,
     ragDocuments,
+    runMetrics,
     statusLabel,
     errorMessage,
     isRefreshing,
@@ -544,6 +613,7 @@ export function useChatConsole() {
     handlingActionIds,
     sendMessage,
     refreshRunEvents,
+    refreshRunMetrics,
     refreshTools,
     refreshMcpServers,
     toggleMcpServer,

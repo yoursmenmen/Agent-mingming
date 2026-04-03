@@ -1,5 +1,13 @@
 import type { ChatRequest } from '../types/chat'
-import type { McpServerInfo, RagDocuments, RagSourceInfo, RagSyncStatus, RunEventItem, ToolInfo } from '../types/run'
+import type {
+  McpServerInfo,
+  RagDocuments,
+  RagSourceInfo,
+  RagSyncStatus,
+  RunEventItem,
+  RunEventMetrics,
+  ToolInfo,
+} from '../types/run'
 
 const DEV_TOKEN = 'dev-token-change-me'
 
@@ -26,6 +34,20 @@ export async function fetchRunEvents(runId: string): Promise<RunEventItem[]> {
   }
 
   return response.json() as Promise<RunEventItem[]>
+}
+
+export async function fetchRunEventMetrics(hours = 24): Promise<RunEventMetrics> {
+  const response = await fetch(`/api/metrics/run-events?hours=${hours}`, {
+    headers: {
+      Authorization: `Bearer ${DEV_TOKEN}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`获取运行指标失败：${response.status}`)
+  }
+
+  return response.json() as Promise<RunEventMetrics>
 }
 
 export async function fetchSessionEvents(sessionId: string): Promise<RunEventItem[]> {

@@ -135,15 +135,15 @@ const handlingActionIds = computed(() => props.handlingActionIds ?? [])
               <button
                 class="ghost-button"
                 type="button"
-                :disabled="handlingActionIds.includes(action.actionId)"
+                :disabled="handlingActionIds.includes(action.actionId) || action.state === 'PROCESSING'"
                 @click="emit('confirm-pending-action', action.actionId)"
               >
-                {{ handlingActionIds.includes(action.actionId) ? '执行中…' : '确认执行' }}
+                {{ handlingActionIds.includes(action.actionId) || action.state === 'PROCESSING' ? '处理中…' : '确认执行' }}
               </button>
               <button
                 class="ghost-button ghost-button--danger"
                 type="button"
-                :disabled="handlingActionIds.includes(action.actionId)"
+                :disabled="handlingActionIds.includes(action.actionId) || action.state === 'PROCESSING'"
                 @click="emit('reject-pending-action', action.actionId)"
               >
                 拒绝

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.event.RunEventType;
+import com.mingming.agent.event.contract.EventContractRegistry;
 import com.mingming.agent.repository.RunEventRepository;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -26,6 +27,7 @@ public class RetrievalEventService {
 
     private final RunEventRepository runEventRepository;
     private final ObjectMapper objectMapper;
+    private final EventContractRegistry eventContractRegistry;
 
     public void record(UUID runId, int seq, String query, List<Bm25RetrieverService.RetrievalHit> hits) {
         List<RetrievalResultHit> enrichedHits = (hits == null ? List.<Bm25RetrieverService.RetrievalHit>of() : hits).stream()
@@ -69,6 +71,8 @@ public class RetrievalEventService {
             item.put("score", retrievalHit.score());
             item.put("source", normalizeSource(hit.source()));
         }
+
+        payload = eventContractRegistry.normalizeAndValidate(RunEventType.RETRIEVAL_RESULT, payload);
 
         RunEventEntity entity = new RunEventEntity();
         entity.setId(UUID.randomUUID());

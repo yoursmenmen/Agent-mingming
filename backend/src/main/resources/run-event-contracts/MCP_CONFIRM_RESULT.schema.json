@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MCP_CONFIRM_RESULT payload",
+  "type": "object",
+  "required": ["schemaVersion", "actionId", "status", "server", "tool", "result"],
+  "properties": {
+    "schemaVersion": { "const": "mcp-confirm-result.v1" },
+    "actionId": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["CONFIRMED_EXECUTED", "CONFIRM_EXECUTION_FAILED", "REJECTED", "UNKNOWN"]
+    },
+    "server": { "type": "string", "minLength": 1 },
+    "tool": { "type": "string", "minLength": 1 },
+    "source": { "type": "string" },
+    "reason": { "type": "string" },
+    "result": {
+      "type": "object",
+      "required": ["ok", "executed", "status"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "executed": { "type": "boolean" },
+        "status": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

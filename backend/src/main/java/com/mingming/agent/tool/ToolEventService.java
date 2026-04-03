@@ -2,6 +2,7 @@ package com.mingming.agent.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.mingming.agent.event.contract.EventContractRegistry;
 import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.event.RunEventType;
 import com.mingming.agent.repository.RunEventRepository;
@@ -19,6 +20,7 @@ public class ToolEventService {
 
     private final RunEventRepository runEventRepository;
     private final ObjectMapper objectMapper;
+    private final EventContractRegistry eventContractRegistry;
 
     public void recordToolCall(ToolContext toolContext, String toolName, Map<String, Object> args) {
         record(toolContext, RunEventType.TOOL_CALL, toolName, args);
@@ -36,8 +38,9 @@ public class ToolEventService {
         }
 
         ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("tool", toolName);
-        payload.set("data", objectMapper.valueToTree(data));
+        payload.put("tool", toolName == null ? "unknown" : toolName);
+        payload.set("data", objectMapper.valueToTree(data == null ? Map.of() : data));
+        payload = eventContractRegistry.normalizeAndValidate(type, payload);
 
         RunEventEntity entity = new RunEventEntity();
         entity.setId(UUID.randomUUID());

@@ -23,6 +23,7 @@ const {
   ragSyncStatus,
   ragSources,
   ragDocuments,
+  runMetrics,
   statusLabel,
   errorMessage,
   isRefreshing,
@@ -82,6 +83,7 @@ const activeInspectorProps = computed(() => {
       runId: readState(runId),
       timelineCount: readState(timelineCount),
       isRefreshing: readState(isRefreshing),
+      runMetrics: readState(runMetrics),
       onRefresh: refreshRunEvents,
     }
   }

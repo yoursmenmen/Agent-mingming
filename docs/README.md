@@ -6,3 +6,4 @@
 - [配置参考](config-reference.md)
 - [MCP 本地工具服务使用说明](mcp-local-ops-guide.md)
 - [Agent-MM 面试复盘手册](Agent-MM.md)
+- [Harness Engineering 专题](harness-engineering.md)

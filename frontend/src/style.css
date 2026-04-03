@@ -1245,32 +1245,76 @@ h2 {
 
 .status-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
   margin: 0;
 }
 
+.status-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.status-section + .status-section {
+  margin-top: 12px;
+}
+
+.status-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.status-section-head h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-main);
+}
+
+.status-window-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-deep);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(251, 207, 232, 0.9);
+}
+
+.status-grid--metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.status-cell--wide {
+  grid-column: 1 / -1;
+}
+
 .status-grid div {
-  padding: 13px 14px;
-  border-radius: 18px;
+  padding: 10px 12px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.88);
   border: 1px solid rgba(251, 207, 232, 0.9);
 }
 
 .status-grid dt {
-  margin-bottom: 8px;
-  font-size: 13px;
+  margin-bottom: 5px;
+  font-size: 12px;
 }
 
 .status-grid dd {
   margin: 0;
   font-weight: 600;
   color: var(--text-main);
+  line-height: 1.25;
 }
 
 .run-id {
   word-break: break-all;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .empty-state {
@@ -1537,6 +1581,10 @@ pre {
     grid-template-columns: 1fr;
   }
 
+  .status-grid--metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .rag-quick-toggles {
     grid-template-columns: 1fr;
   }
@@ -1607,6 +1655,11 @@ pre {
   .sidebar-tab {
     min-height: 52px;
     flex-direction: row;
+  }
+
+  .status-grid,
+  .status-grid--metrics {
+    grid-template-columns: 1fr;
   }
 }
 

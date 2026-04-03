@@ -1,8 +1,10 @@
 package com.mingming.agent.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.event.RunEventType;
+import com.mingming.agent.event.contract.EventContractRegistry;
 import com.mingming.agent.repository.RunEventRepository;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -30,6 +32,7 @@ public class McpToolService {
     private final McpHttpClient mcpHttpClient;
     private final RunEventRepository runEventRepository;
     private final ObjectMapper objectMapper;
+    private final EventContractRegistry eventContractRegistry;
     private final Map<String, Boolean> enabledOverrides = new ConcurrentHashMap<>();
     private final Map<String, PendingAction> pendingActions = new ConcurrentHashMap<>();
 
@@ -48,11 +51,13 @@ public class McpToolService {
             McpServerRegistry registry,
             McpHttpClient mcpHttpClient,
             RunEventRepository runEventRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            EventContractRegistry eventContractRegistry) {
         this.registry = registry;
         this.mcpHttpClient = mcpHttpClient;
         this.runEventRepository = runEventRepository;
         this.objectMapper = objectMapper;
+        this.eventContractRegistry = eventContractRegistry;
     }
 
     private record PendingAction(
@@ -571,7 +576,10 @@ public class McpToolService {
         eventPayload.put("tool", action.tool());
         eventPayload.put("source", action.source());
         eventPayload.put("reason", action.reason());
-        eventPayload.put("result", result);
+        eventPayload.put("result", result == null ? Map.of() : result);
+
+        ObjectNode normalizedPayload = eventContractRegistry.normalizeAndValidate(
+                RunEventType.MCP_CONFIRM_RESULT, (ObjectNode) objectMapper.valueToTree(eventPayload));
 
         RunEventEntity entity = new RunEventEntity();
         entity.setId(UUID.randomUUID());
@@ -580,7 +588,7 @@ public class McpToolService {
         entity.setType(RunEventType.MCP_CONFIRM_RESULT.name());
         entity.setCreatedAt(OffsetDateTime.now());
         try {
-            entity.setPayload(objectMapper.writeValueAsString(eventPayload));
+            entity.setPayload(objectMapper.writeValueAsString(normalizedPayload));
         } catch (Exception ex) {
             entity.setPayload("{\"status\":\"SERIALIZE_ERROR\"}");
         }

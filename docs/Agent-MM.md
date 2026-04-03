@@ -317,3 +317,110 @@ sequenceDiagram
 你现在这套工程化路线完全成立，而且很适合面试表达：
 - 先把可执行能力做成 tool（可观测、可审计、可控）；
 - 后续再补 prompt skill 层（任务分解、渐进披露、策略约束）。
+
+---
+
+## 14. Harness Engineering 视角：当前项目已经体现了什么
+
+> 定位：Harness Engineering 的核心不是“让模型更聪明”，而是“给模型搭可控、可观测、可审计、可演进的执行底座（harness）”。
+
+### 14.1 你项目里已经具备的 Harness 能力
+
+1. **事件化执行轨迹（Execution Harness）**
+   - 体现：run/event 持久化，关键事件可回放（`USER_MESSAGE`、`RETRIEVAL_RESULT`、`TOOL_CALL`、`TOOL_RESULT`、`MCP_TOOLS_BOUND`、`MCP_CONFIRM_RESULT`）。
+   - 价值：不是黑盒“只看答案”，而是可追踪“为什么得出这个答案”。
+
+2. **工具治理与策略门（Policy Harness）**
+   - 体现：MCP 运行时工具注入 + allow/deny/max-callbacks；高风险工具 `run_local_command` 支持 hard block 和 pending confirm。
+   - 价值：把 Agent 能力放在安全边界里运行，避免“模型想干啥就干啥”。
+
+3. **人机协同确认闭环（Human-in-the-loop Harness）**
+   - 体现：pending action -> confirm/reject -> 结果回写 run 事件。
+   - 价值：关键动作可人工把关，满足生产场景合规与审计要求。
+
+4. **混合检索编排（Retrieval Harness）**
+   - 体现：hybrid（BM25 + 向量）+ RRF 融合；检索结果事件化记录命中统计和来源。
+   - 价值：把“检索质量”从主观感觉变成可观测、可优化的流水线。
+
+5. **前端观测控制台（Operator Harness）**
+   - 体现：时间线、工具面板、RAG 面板、pending action 操作入口。
+   - 价值：开发与运维不需要猜系统状态，具备运行期可操作性。
+
+### 14.2 为什么这就是 Harness Engineering
+
+你的系统已把 Agent 运行拆成了 5 个可治理层：
+
+- **Input Harness**：消息入口 + session/run 组织；
+- **Retrieval Harness**：召回与融合可观测；
+- **Tool Harness**：工具接入、策略、确认网关；
+- **Trace Harness**：事件落库、回放、审计；
+- **Operator Harness**：前端控制台可观测与人工干预。
+
+这正是 Harness Engineering 的典型形态：**把 LLM 放进可控系统，而不是把系统交给 LLM。**
+
+---
+
+## 15. 以 Harness Engineering 为重心的下一步实现计划
+
+> 你指定的优先级：前端联调增强 > 事件 schema 固化 > 可观测指标（先不做测试任务）。
+
+### 15.1 前端联调增强（Pending/Confirm 生命周期闭环）
+
+目标：让 pending action 在 UI 上形成“出现 -> 处理 -> 收敛”的完整生命周期，不残留噪音。
+
+实现步骤：
+
+1. 在时间线层建立 `actionId` 维度状态机（`PENDING_CONFIRMATION` -> `CONFIRMED_EXECUTED` / `CONFIRM_EXECUTION_FAILED` / `REJECTED`）。
+2. pending 列表与时间线共用同一份状态源，避免双份逻辑导致不一致。
+3. confirm/reject 后自动收敛 pending 列表项，并在时间线保留最终结果 badge。
+4. 对“确认接口成功但事件回写延迟”做短暂 optimistic 状态（例如处理中/同步中）。
+
+交付标准：
+
+- 一个 actionId 在界面上只保留一条最终状态；
+- pending 区域不会出现已处理项“回弹”；
+- 用户能从时间线一眼看出确认是成功、失败还是拒绝。
+
+### 15.2 事件 Schema 固化（Event Contract）
+
+目标：把 run_event 从“可写 JSON”升级为“有契约 JSON”，保证前后端演进稳定。
+
+实现步骤：
+
+1. 在文档中新增“事件契约表”，至少覆盖：`TOOL_RESULT`、`MCP_CONFIRM_RESULT`、`RETRIEVAL_RESULT`。
+2. 约定每类事件的 `required` / `optional` 字段与枚举值（例如 `status`）。
+3. 后端在事件写入前做最小字段完整性保护（缺关键字段时写默认值并标记 degraded）。
+4. 前端 mapper 对未知字段降级展示，对关键缺失字段做兜底文案。
+
+交付标准：
+
+- 文档有可执行的事件契约；
+- 后端新增字段不会破坏前端展示；
+- 前端对“老 payload / 新 payload”都能兼容。
+
+### 15.3 可观测指标（Metrics Harness）
+
+目标：从“能回放”升级到“可量化运营”，最小化实现确认链路与工具链路指标。
+
+实现步骤：
+
+1. 后端增加轻量聚合接口（按时间窗口返回计数）：
+   - `confirm_total`、`confirm_success_total`、`confirm_failed_total`、`confirm_rejected_total`；
+   - `tool_call_total`、`tool_error_total`（可选按 toolName 分组）。
+2. 前端 RunStatus 或 Timeline 面板增加指标卡片，默认展示近 24h。
+3. 指标口径固定在文档中（统计口径、时间窗口、是否去重）。
+4. 后续再接 Prometheus/OpenTelemetry，先保留接口兼容位。
+
+交付标准：
+
+- 控制台可直接看到确认成功率与失败量；
+- 指标口径在文档中有明确说明；
+- 运营/排障不再只靠逐条翻时间线。
+
+### 15.4 执行顺序建议（本周）
+
+1. 先做 15.2（Schema 固化）打地基；
+2. 再做 15.1（前端联调增强）提升交互一致性；
+3. 最后做 15.3（可观测指标）形成运营闭环。
+
+一句话：**先立契约，再稳联调，最后上指标。**

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RETRIEVAL_RESULT payload",
+  "type": "object",
+  "required": ["schemaVersion", "query", "strategy", "vectorHitCount", "bm25HitCount", "finalHitCount", "hits"],
+  "properties": {
+    "schemaVersion": { "const": "retrieval-result.v1" },
+    "query": { "type": "string" },
+    "strategy": { "type": "string" },
+    "vectorHitCount": { "type": "integer", "minimum": 0 },
+    "bm25HitCount": { "type": "integer", "minimum": 0 },
+    "finalHitCount": { "type": "integer", "minimum": 0 },
+    "hitCount": { "type": "integer", "minimum": 0 },
+    "hits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "chunkId": { "type": "string" },
+          "docPath": { "type": "string" },
+          "headingPath": { "type": "string" },
+          "snippet": { "type": "string" },
+          "score": { "type": "number" },
+          "source": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

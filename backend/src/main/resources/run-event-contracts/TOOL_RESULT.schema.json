@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TOOL_RESULT payload",
+  "type": "object",
+  "required": ["schemaVersion", "tool", "data"],
+  "properties": {
+    "schemaVersion": { "const": "tool-result.v1" },
+    "tool": { "type": "string", "minLength": 1 },
+    "data": {
+      "type": "object",
+      "required": ["status", "ok"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["SUCCESS", "FAILED", "PENDING_CONFIRMATION", "BLOCKED_POLICY", "UNKNOWN"]
+        },
+        "ok": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -30,6 +30,7 @@ export interface PendingMcpAction {
   tool: string
   summary: string
   createdAt: string
+  state: 'PENDING_CONFIRMATION' | 'PROCESSING'
 }
 
 export type RunStatus = 'idle' | 'streaming' | 'done' | 'error'
@@ -84,4 +85,17 @@ export interface RagSourceInfo {
 export interface RagDocuments {
   localDocs: string[]
   urlDocs: string[]
+}
+
+export interface RunEventMetrics {
+  windowHours: number
+  from: string
+  to: string
+  tool_call_total: number
+  tool_result_total: number
+  tool_error_total: number
+  confirm_total: number
+  confirm_success_total: number
+  confirm_failed_total: number
+  confirm_rejected_total: number
 }
