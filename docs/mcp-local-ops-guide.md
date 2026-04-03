@@ -33,6 +33,22 @@ python tools/mcp/local_ops_mcp.py
 curl http://127.0.0.1:9100/health
 ```
 
+可选鉴权（用于本地先学习 HTTP MCP auth）：
+
+```bash
+# 关闭鉴权（默认）
+export MCP_AUTH_MODE=none
+
+# 或 Bearer Token
+export MCP_AUTH_MODE=bearer
+export MCP_AUTH_BEARER_TOKEN="local-mcp-token"
+
+# 或 API Key
+export MCP_AUTH_MODE=apikey
+export MCP_AUTH_API_KEY="local-mcp-key"
+export MCP_AUTH_API_KEY_HEADER="x-api-key"
+```
+
 ## 3. 后端接入配置
 
 文件：`backend/src/main/resources/mcp/servers.yml`
@@ -47,9 +63,57 @@ servers:
     streaming: none
     enabled: true
     timeoutMs: 12000
+    auth:
+      type: bearer
+      tokenEnv: MCP_LOCAL_OPS_BEARER_TOKEN
 ```
 
+注意：`tokenEnv` 写的是“环境变量名”，不是 token 明文值。
+
 然后重启后端。
+
+如果你在本地 MCP 启用了 API Key，可以这样配：
+
+```yaml
+servers:
+  - name: local-ops
+    transport: http
+    url: http://127.0.0.1:9100
+    streaming: none
+    enabled: true
+    timeoutMs: 12000
+    auth:
+      type: apikey
+      tokenEnv: MCP_LOCAL_OPS_API_KEY
+      headerName: x-api-key
+```
+
+说明：
+
+- `tokenEnv` 指环境变量名，后端在运行时读取；
+- `token` 也支持直接写入配置（仅建议本地临时调试，不建议提交仓库）。
+
+### 3.1 stdio 方式（学习 MCP 传输层可选）
+
+如果你要体验 stdio 传输（不经过 HTTP）：
+
+```yaml
+servers:
+  - name: local-ops-stdio
+    transport: stdio
+    command: python
+    args:
+      - tools/mcp/local_ops_mcp.py
+    enabled: true
+    timeoutMs: 12000
+    auth:
+      type: none
+```
+
+说明：
+
+- 当前实现是“按次启动进程并请求一次”，用于学习与联调；
+- 生产建议使用长连接进程池或 HTTP 网关方式。
 
 ## 4. 从后端接口调用
 
@@ -59,6 +123,24 @@ servers:
 curl -H "Authorization: Bearer dev-token-change-me" \
   http://localhost:18080/api/mcp/tools
 ```
+
+如果你直接调用本地 MCP 服务（绕过后端）做鉴权验证：
+
+```bash
+# Bearer 示例
+curl -X POST "http://127.0.0.1:9100" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer local-mcp-token" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'
+
+# API Key 示例
+curl -X POST "http://127.0.0.1:9100" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: local-mcp-key" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'
+```
+
+未携带或携带错误凭据会返回 HTTP `401` 与 JSON-RPC error `-32003 unauthorized`。
 
 ### 4.2 调用 `fetch_page`
 

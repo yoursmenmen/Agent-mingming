@@ -65,6 +65,10 @@ class Config:
     ssh_auth_mode: str = os.getenv("MCP_SSH_AUTH_MODE", "password").strip().lower()
     ssh_strict_host_key_checking: str = os.getenv("MCP_SSH_STRICT_HOST_KEY_CHECKING", "accept-new").strip()
     kubeconfig_path: str = os.getenv("MCP_KUBECONFIG", "/home/root_dlutcardiff/.kube").strip()
+    auth_mode: str = os.getenv("MCP_AUTH_MODE", "none").strip().lower()
+    auth_bearer_token: str = os.getenv("MCP_AUTH_BEARER_TOKEN", "").strip()
+    auth_api_key: str = os.getenv("MCP_AUTH_API_KEY", "").strip()
+    auth_api_key_header: str = os.getenv("MCP_AUTH_API_KEY_HEADER", "x-api-key").strip()
 
 
 CONFIG = Config()
@@ -378,7 +382,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == "/health":
-            self._write_json(200, {"status": "ok", "tools": [tool["name"] for tool in tool_list()]})
+            self._write_json(
+                200,
+                {
+                    "status": "ok",
+                    "tools": [tool["name"] for tool in tool_list()],
+                    "authMode": CONFIG.auth_mode,
+                },
+            )
             return
         self._write_json(404, {"error": "not found"})
 
@@ -390,6 +401,10 @@ class Handler(BaseHTTPRequestHandler):
             req_id = payload.get("id")
             method = payload.get("method")
             params = payload.get("params") or {}
+
+            if not self._is_authorized_request():
+                self._write_json(401, jsonrpc_err(req_id, -32003, "unauthorized"))
+                return
 
             if method == "tools/list":
                 response = jsonrpc_ok(req_id, {"tools": tool_list()})
@@ -424,6 +439,25 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _is_authorized_request(self) -> bool:
+        mode = CONFIG.auth_mode
+        if mode == "none":
+            return True
+        if mode == "bearer":
+            if not CONFIG.auth_bearer_token:
+                return False
+            auth_header = self.headers.get("Authorization", "")
+            if not auth_header.startswith("Bearer "):
+                return False
+            token = auth_header[len("Bearer "):].strip()
+            return token == CONFIG.auth_bearer_token
+        if mode in {"apikey", "api_key"}:
+            if not CONFIG.auth_api_key:
+                return False
+            header_name = CONFIG.auth_api_key_header or "x-api-key"
+            return self.headers.get(header_name, "").strip() == CONFIG.auth_api_key
+        return False
+
 
 def main() -> None:
     server = ThreadingHTTPServer((CONFIG.host, CONFIG.port), Handler)
@@ -442,6 +476,8 @@ def main() -> None:
                 "sshAuthMode": CONFIG.ssh_auth_mode,
                 "kubeconfig": CONFIG.kubeconfig_path,
                 "allowUnsafeCommands": CONFIG.allow_unsafe_commands,
+                "authMode": CONFIG.auth_mode,
+                "authApiKeyHeader": CONFIG.auth_api_key_header,
             },
             ensure_ascii=True,
         )

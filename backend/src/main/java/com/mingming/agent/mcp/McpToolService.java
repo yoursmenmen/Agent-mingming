@@ -30,6 +30,7 @@ public class McpToolService {
 
     private final McpServerRegistry registry;
     private final McpHttpClient mcpHttpClient;
+    private final McpStdioClient mcpStdioClient;
     private final RunEventRepository runEventRepository;
     private final ObjectMapper objectMapper;
     private final EventContractRegistry eventContractRegistry;
@@ -50,11 +51,13 @@ public class McpToolService {
     public McpToolService(
             McpServerRegistry registry,
             McpHttpClient mcpHttpClient,
+            McpStdioClient mcpStdioClient,
             RunEventRepository runEventRepository,
             ObjectMapper objectMapper,
             EventContractRegistry eventContractRegistry) {
         this.registry = registry;
         this.mcpHttpClient = mcpHttpClient;
+        this.mcpStdioClient = mcpStdioClient;
         this.runEventRepository = runEventRepository;
         this.objectMapper = objectMapper;
         this.eventContractRegistry = eventContractRegistry;
@@ -74,8 +77,8 @@ public class McpToolService {
     public Map<String, Object> listTools() {
         List<Map<String, Object>> discoveredTools = new ArrayList<>();
         List<Map<String, Object>> errors = new ArrayList<>();
-        List<McpServerConfig> servers = enabledHttpServers();
-        log.debug("MCP listTools start: enabledHttpServers={}", servers.size());
+        List<McpServerConfig> servers = enabledSupportedServers();
+        log.debug("MCP listTools start: enabledSupportedServers={}", servers.size());
 
         for (McpServerConfig server : servers) {
             try {
@@ -120,7 +123,7 @@ public class McpToolService {
             serverPayload.put("configuredEnabled", server.enabled());
             serverPayload.put("effectiveEnabled", isEnabled(server));
 
-            if (!"http".equalsIgnoreCase(safe(server.transport()))) {
+            if (!isSupportedTransport(server)) {
                 serverPayload.put("tools", List.of());
                 serverPayload.put("lastStatus", "UNSUPPORTED_TRANSPORT");
                 servers.add(serverPayload);
@@ -189,10 +192,10 @@ public class McpToolService {
             throw new IllegalArgumentException("toolName is required");
         }
 
-        McpServerConfig server = enabledHttpServers().stream()
+        McpServerConfig server = enabledSupportedServers().stream()
                 .filter(cfg -> Objects.equals(cfg.name(), serverName))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("enabled HTTP MCP server not found: " + serverName));
+                .orElseThrow(() -> new IllegalArgumentException("enabled MCP server not found: " + serverName));
 
         Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
         CallGateDecision gateDecision = evaluateCallGate(toolName, safeArguments);
@@ -275,10 +278,10 @@ public class McpToolService {
             throw new IllegalArgumentException("pending action not found: " + safe(actionId));
         }
 
-        McpServerConfig server = enabledHttpServers().stream()
+        McpServerConfig server = enabledSupportedServers().stream()
                 .filter(cfg -> Objects.equals(cfg.name(), action.server()))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("enabled HTTP MCP server not found: " + action.server()));
+                .orElseThrow(() -> new IllegalArgumentException("enabled MCP server not found: " + action.server()));
 
         Map<String, Object> result;
         String status = "CONFIRMED_EXECUTED";
@@ -385,12 +388,22 @@ public class McpToolService {
                 .toList();
     }
 
-    private List<McpServerConfig> enabledHttpServers() {
+    private List<McpServerConfig> enabledSupportedServers() {
         return configuredServers().stream()
                 .filter(this::isEnabled)
-                .filter(server -> "http".equalsIgnoreCase(safe(server.transport())))
-                .filter(server -> server.url() != null && !server.url().isBlank())
+                .filter(this::isSupportedTransport)
                 .toList();
+    }
+
+    private boolean isSupportedTransport(McpServerConfig server) {
+        String transport = safe(server.transport()).toLowerCase();
+        if ("http".equals(transport)) {
+            return server.url() != null && !server.url().isBlank();
+        }
+        if ("stdio".equals(transport)) {
+            return server.command() != null && !server.command().isBlank();
+        }
+        return false;
     }
 
     private boolean isEnabled(McpServerConfig server) {
@@ -408,7 +421,15 @@ public class McpToolService {
         payload.put("method", method);
         payload.put("params", params == null ? Map.of() : params);
 
-        Map<String, Object> response = mcpHttpClient.postJson(server.url(), server.timeoutMs(), payload);
+        String transport = safe(server.transport()).toLowerCase();
+        Map<String, Object> response;
+        if ("http".equals(transport)) {
+            response = mcpHttpClient.postJson(server, payload);
+        } else if ("stdio".equals(transport)) {
+            response = mcpStdioClient.postJson(server, payload);
+        } else {
+            throw new IllegalStateException("unsupported transport: " + safe(server.transport()));
+        }
         if (response == null || response.isEmpty()) {
             throw new IllegalStateException("empty response");
         }

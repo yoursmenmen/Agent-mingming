@@ -7,6 +7,20 @@ servers:
   - name: local-ops
     transport: http
     url: http://127.0.0.1:9100
+    # stdio 示例：
+    # transport: stdio
+    # command: python
+    # args:
+    #   - tools/mcp/local_ops_mcp.py
     streaming: none
     enabled: true
     timeoutMs: 12000
+    auth:
+      type: none
+      # bearer 示例（推荐环境变量）：
+      # type: bearer
+      # tokenEnv: MCP_LOCAL_OPS_BEARER_TOKEN
+      # api key 示例：
+      # type: apikey
+      # tokenEnv: MCP_LOCAL_OPS_API_KEY
+      # headerName: x-api-key
