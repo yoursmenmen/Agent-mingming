@@ -63,10 +63,10 @@ function readState<T>(value: T | { value: T }): T {
 }
 
 const inspectorPanes: InspectorPane[] = [
-  { id: 'status', label: '状态', icon: '◎', title: '运行状态', component: markRaw(RunStatusPanel) },
+  { id: 'status', label: '状态', icon: '◉', title: '运行状态', component: markRaw(RunStatusPanel) },
   { id: 'rag', label: 'RAG', icon: '◈', title: 'RAG 同步', component: markRaw(RagPanel) },
-  { id: 'timeline', label: '时间线', icon: '≋', title: '事件时间线', component: markRaw(TimelinePanel) },
-  { id: 'tools', label: '工具', icon: '⚒', title: '可用工具', component: markRaw(ToolsPanel) },
+  { id: 'timeline', label: '轨迹', icon: '☰', title: '事件时间线', component: markRaw(TimelinePanel) },
+  { id: 'tools', label: '工具', icon: '⚙', title: '可用工具', component: markRaw(ToolsPanel) },
 ]
 
 const isSidebarOpen = ref(false)
