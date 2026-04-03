@@ -69,8 +69,13 @@ public class McpBridgeSkills implements LocalToolProvider {
     @SuppressWarnings("unchecked")
     private Map<String, Object> callMcpTool(String toolName, Map<String, Object> arguments, ToolContext toolContext) {
         toolEventService.recordToolCall(toolContext, toolName, arguments);
+        String source = "chat:bridge-skill";
+        String runId = extractRunId(toolContext);
+        if (!runId.isBlank()) {
+            source = source + ":runId=" + runId;
+        }
         try {
-            Map<String, Object> response = mcpToolService.callTool(defaultServer, toolName, arguments, "chat:bridge-skill");
+            Map<String, Object> response = mcpToolService.callTool(defaultServer, toolName, arguments, source);
             Object resultObj = response.get("result");
             Map<String, Object> resultPayload;
             if (resultObj instanceof Map<?, ?> resultMap) {
@@ -94,5 +99,16 @@ public class McpBridgeSkills implements LocalToolProvider {
             toolEventService.recordToolResult(toolContext, toolName, failure);
             return failure;
         }
+    }
+
+    private String extractRunId(ToolContext toolContext) {
+        if (toolContext == null || toolContext.getContext() == null) {
+            return "";
+        }
+        Object runId = toolContext.getContext().get("runId");
+        if (runId instanceof String text) {
+            return text.trim();
+        }
+        return "";
     }
 }

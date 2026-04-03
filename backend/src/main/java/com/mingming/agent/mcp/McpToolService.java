@@ -1,5 +1,10 @@
 package com.mingming.agent.mcp;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mingming.agent.entity.RunEventEntity;
+import com.mingming.agent.event.RunEventType;
+import com.mingming.agent.repository.RunEventRepository;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -23,6 +28,8 @@ public class McpToolService {
 
     private final McpServerRegistry registry;
     private final McpHttpClient mcpHttpClient;
+    private final RunEventRepository runEventRepository;
+    private final ObjectMapper objectMapper;
     private final Map<String, Boolean> enabledOverrides = new ConcurrentHashMap<>();
     private final Map<String, PendingAction> pendingActions = new ConcurrentHashMap<>();
 
@@ -37,9 +44,15 @@ public class McpToolService {
     private static final Pattern CONFIRM_INSTALL = Pattern.compile("(?i)\\b(apt|apt-get|yum|dnf|pip|pip3|npm|pnpm|yarn|brew|choco|winget)\\b.*\\b(install|update|upgrade|remove|uninstall)\\b");
     private static final Pattern CONFIRM_MUTATION = Pattern.compile("(?i)\\b(kubectl\\s+(apply|delete|patch|scale|edit)|docker\\s+(run|exec|rm|rmi|compose\\s+up)|git\\s+(push|reset|clean)|chmod|chown|mv|cp|mkdir|touch)\\b");
 
-    public McpToolService(McpServerRegistry registry, McpHttpClient mcpHttpClient) {
+    public McpToolService(
+            McpServerRegistry registry,
+            McpHttpClient mcpHttpClient,
+            RunEventRepository runEventRepository,
+            ObjectMapper objectMapper) {
         this.registry = registry;
         this.mcpHttpClient = mcpHttpClient;
+        this.runEventRepository = runEventRepository;
+        this.objectMapper = objectMapper;
     }
 
     private record PendingAction(
@@ -48,6 +61,7 @@ public class McpToolService {
             String tool,
             Map<String, Object> arguments,
             String source,
+            UUID runId,
             String reason,
             long createdAtEpochMs,
             long expiresAtEpochMs) {}
@@ -195,7 +209,13 @@ public class McpToolService {
         }
 
         if (gateDecision.requiresConfirmation()) {
-            PendingAction pending = createPendingAction(server.name(), toolName, safeArguments, source, gateDecision.reason());
+            PendingAction pending = createPendingAction(
+                    server.name(),
+                    toolName,
+                    safeArguments,
+                    source,
+                    extractRunIdFromSource(source),
+                    gateDecision.reason());
             log.info(
                     "MCP callTool pending confirmation: actionId={}, source={}, server={}, tool={}, args={}, reason={}, expiresAt={}",
                     pending.actionId(),
@@ -232,6 +252,7 @@ public class McpToolService {
                     payload.put("server", action.server());
                     payload.put("tool", action.tool());
                     payload.put("source", action.source());
+                    payload.put("runId", action.runId() == null ? "" : action.runId().toString());
                     payload.put("reason", action.reason());
                     payload.put("arguments", action.arguments());
                     payload.put("createdAt", action.createdAtEpochMs());
@@ -268,6 +289,7 @@ public class McpToolService {
                     "server", action.server(),
                     "tool", action.tool());
         }
+        appendConfirmResultEvent(action, status, result);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("actionId", action.actionId());
         payload.put("status", status);
@@ -283,6 +305,12 @@ public class McpToolService {
         if (action == null) {
             throw new IllegalArgumentException("pending action not found: " + safe(actionId));
         }
+        appendConfirmResultEvent(action, "REJECTED", Map.of(
+                "ok", true,
+                "executed", false,
+                "status", "REJECTED",
+                "server", action.server(),
+                "tool", action.tool()));
         return Map.of(
                 "actionId", action.actionId(),
                 "status", "REJECTED",
@@ -472,6 +500,7 @@ public class McpToolService {
             String tool,
             Map<String, Object> arguments,
             String source,
+            UUID runId,
             String reason) {
         pruneExpiredPendingActions();
         String actionId = UUID.randomUUID().toString();
@@ -483,6 +512,7 @@ public class McpToolService {
                 tool,
                 new LinkedHashMap<>(arguments),
                 safe(source),
+                runId,
                 safe(reason),
                 now,
                 now + ttlMs);
@@ -501,6 +531,60 @@ public class McpToolService {
         for (String id : expiredIds) {
             pendingActions.remove(id);
         }
+    }
+
+    private UUID extractRunIdFromSource(String source) {
+        if (source == null || source.isBlank()) {
+            return null;
+        }
+        int markerIndex = source.indexOf("runId=");
+        if (markerIndex < 0) {
+            return null;
+        }
+        String runIdCandidate = source.substring(markerIndex + "runId=".length()).trim();
+        if (runIdCandidate.isBlank()) {
+            return null;
+        }
+        int separatorIndex = runIdCandidate.indexOf(':');
+        if (separatorIndex >= 0) {
+            runIdCandidate = runIdCandidate.substring(0, separatorIndex).trim();
+        }
+        try {
+            return UUID.fromString(runIdCandidate);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private void appendConfirmResultEvent(PendingAction action, String status, Map<String, Object> result) {
+        if (action == null || action.runId() == null) {
+            return;
+        }
+
+        Integer currentMax = runEventRepository.findMaxSeqByRunId(action.runId());
+        int nextSeq = (currentMax == null ? 0 : currentMax) + 1;
+
+        Map<String, Object> eventPayload = new LinkedHashMap<>();
+        eventPayload.put("actionId", action.actionId());
+        eventPayload.put("status", status);
+        eventPayload.put("server", action.server());
+        eventPayload.put("tool", action.tool());
+        eventPayload.put("source", action.source());
+        eventPayload.put("reason", action.reason());
+        eventPayload.put("result", result);
+
+        RunEventEntity entity = new RunEventEntity();
+        entity.setId(UUID.randomUUID());
+        entity.setRunId(action.runId());
+        entity.setSeq(nextSeq);
+        entity.setType(RunEventType.MCP_CONFIRM_RESULT.name());
+        entity.setCreatedAt(OffsetDateTime.now());
+        try {
+            entity.setPayload(objectMapper.writeValueAsString(eventPayload));
+        } catch (Exception ex) {
+            entity.setPayload("{\"status\":\"SERIALIZE_ERROR\"}");
+        }
+        runEventRepository.save(entity);
     }
 
     private String buildArgumentsSummary(String toolName, Map<String, Object> arguments) {

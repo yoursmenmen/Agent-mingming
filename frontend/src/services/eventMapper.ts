@@ -142,6 +142,42 @@ function summarizeMcpToolsBoundPayload(payload: unknown): string | null {
   return `工具注入完成 | 本地: ${localToolCount} | MCP: ${mcpToolCount} | 总计: ${totalToolCount} | 屏蔽: ${blockedCount} | 发现错误: ${discoveryErrorCount} | 首个MCP: ${firstCallbackName}`
 }
 
+function summarizeMcpConfirmResultPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+
+  const confirmPayload = payload as {
+    actionId?: unknown
+    status?: unknown
+    server?: unknown
+    tool?: unknown
+    result?: {
+      error?: unknown
+      exitCode?: unknown
+    }
+  }
+
+  const actionId = typeof confirmPayload.actionId === 'string' ? confirmPayload.actionId : '-'
+  const status = typeof confirmPayload.status === 'string' ? confirmPayload.status : 'UNKNOWN'
+  const server = typeof confirmPayload.server === 'string' ? confirmPayload.server : 'unknown'
+  const tool = typeof confirmPayload.tool === 'string' ? confirmPayload.tool : 'unknown'
+  const result = confirmPayload.result && typeof confirmPayload.result === 'object' ? confirmPayload.result : {}
+  const error = typeof result.error === 'string' ? result.error : ''
+  const exitCode = typeof result.exitCode === 'number' && Number.isFinite(result.exitCode) ? result.exitCode : null
+
+  if (status === 'REJECTED') {
+    return `命令确认已拒绝 | actionId: ${actionId} | ${server}/${tool}`
+  }
+  if (status === 'CONFIRM_EXECUTION_FAILED') {
+    return `命令确认执行失败 | actionId: ${actionId} | ${server}/${tool} | ${error || '未知错误'}`
+  }
+  if (status === 'CONFIRMED_EXECUTED') {
+    return `命令确认已执行 | actionId: ${actionId} | ${server}/${tool} | exitCode: ${exitCode === null ? 'N/A' : String(exitCode)}`
+  }
+  return `命令确认结果 | actionId: ${actionId} | 状态: ${status} | ${server}/${tool}`
+}
+
 function summarizeToolCallPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') {
     return null
@@ -200,7 +236,27 @@ function summarizeToolResultPayload(payload: unknown): string | null {
 }
 
 function extractToolActionInfo(eventType: string | undefined, payload: unknown): Pick<TimelineItem, 'actionId' | 'actionState'> {
-  if (eventType !== 'TOOL_RESULT' || !payload || typeof payload !== 'object') {
+  if (!payload || typeof payload !== 'object') {
+    return {}
+  }
+
+  if (eventType === 'MCP_CONFIRM_RESULT') {
+    const confirmPayload = payload as { actionId?: unknown; status?: unknown }
+    const actionId = typeof confirmPayload.actionId === 'string' ? confirmPayload.actionId : undefined
+    const status = typeof confirmPayload.status === 'string' ? confirmPayload.status : ''
+    if (status === 'CONFIRMED_EXECUTED') {
+      return { actionId, actionState: 'CONFIRMED_EXECUTED' }
+    }
+    if (status === 'CONFIRM_EXECUTION_FAILED') {
+      return { actionId, actionState: 'CONFIRM_EXECUTION_FAILED' }
+    }
+    if (status === 'REJECTED') {
+      return { actionId, actionState: 'REJECTED' }
+    }
+    return { actionId }
+  }
+
+  if (eventType !== 'TOOL_RESULT') {
     return {}
   }
 
@@ -240,6 +296,13 @@ export function summarizePayload(payload: unknown, eventType?: string): string {
     const mcpToolsSummary = summarizeMcpToolsBoundPayload(payload)
     if (mcpToolsSummary) {
       return mcpToolsSummary
+    }
+  }
+
+  if (eventType === 'MCP_CONFIRM_RESULT') {
+    const confirmResultSummary = summarizeMcpConfirmResultPayload(payload)
+    if (confirmResultSummary) {
+      return confirmResultSummary
     }
   }
 

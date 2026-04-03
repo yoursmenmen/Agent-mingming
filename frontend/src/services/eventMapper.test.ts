@@ -137,4 +137,29 @@ describe('mapRunEventToTimelineItem', () => {
     expect(failed.summary).toContain('触发: bootstrap')
     expect(failed.summary).toContain('network timeout')
   })
+
+  it('builds mcp confirm result summary', () => {
+    const item = mapRunEventToTimelineItem({
+      id: 'evt-mcp-confirm-1',
+      runId: 'run-1',
+      seq: 8,
+      createdAt: '2026-04-03T10:00:07Z',
+      type: 'MCP_CONFIRM_RESULT',
+      payload: JSON.stringify({
+        actionId: 'action-1',
+        status: 'CONFIRMED_EXECUTED',
+        server: 'local-ops',
+        tool: 'run_local_command',
+        result: {
+          exitCode: 0,
+        },
+      }),
+    })
+
+    expect(item.summary).toContain('命令确认已执行')
+    expect(item.summary).toContain('action-1')
+    expect(item.summary).toContain('local-ops/run_local_command')
+    expect(item.summary).toContain('exitCode: 0')
+    expect(item.actionState).toBe('CONFIRMED_EXECUTED')
+  })
 })

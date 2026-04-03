@@ -1387,6 +1387,40 @@ h2 {
   gap: 12px;
 }
 
+.timeline-meta-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeline-event-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.timeline-event-badge[data-tone='success'] {
+  color: #0f766e;
+  background: rgba(204, 251, 241, 0.8);
+  border-color: rgba(45, 212, 191, 0.5);
+}
+
+.timeline-event-badge[data-tone='danger'] {
+  color: #be123c;
+  background: rgba(255, 228, 230, 0.9);
+  border-color: rgba(251, 113, 133, 0.45);
+}
+
+.timeline-event-badge[data-tone='muted'] {
+  color: #6b7280;
+  background: rgba(243, 244, 246, 0.9);
+  border-color: rgba(156, 163, 175, 0.45);
+}
+
 details {
   margin-top: 14px;
 }

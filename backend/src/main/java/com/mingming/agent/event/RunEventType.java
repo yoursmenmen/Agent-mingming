@@ -7,6 +7,7 @@ public enum RunEventType {
     RETRIEVAL_RESULT,
     RAG_SYNC,
     MCP_TOOLS_BOUND,
+    MCP_CONFIRM_RESULT,
     TOOL_CALL,
     TOOL_RESULT,
     ERROR

@@ -16,7 +16,13 @@ export interface TimelineItem {
   rawPayload: string
   source: 'stream' | 'history'
   actionId?: string
-  actionState?: 'PENDING_CONFIRMATION' | 'BLOCKED_POLICY' | 'DONE'
+  actionState?:
+    | 'PENDING_CONFIRMATION'
+    | 'BLOCKED_POLICY'
+    | 'DONE'
+    | 'CONFIRMED_EXECUTED'
+    | 'CONFIRM_EXECUTION_FAILED'
+    | 'REJECTED'
 }
 
 export interface PendingMcpAction {

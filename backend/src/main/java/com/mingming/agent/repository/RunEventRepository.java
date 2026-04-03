@@ -12,6 +12,9 @@ public interface RunEventRepository extends JpaRepository<RunEventEntity, UUID> 
 
     List<RunEventEntity> findByRunIdInOrderByCreatedAtAscSeqAsc(List<UUID> runIds);
 
+    @Query("SELECT COALESCE(MAX(e.seq), 0) FROM RunEventEntity e WHERE e.runId = :runId")
+    Integer findMaxSeqByRunId(@Param("runId") UUID runId);
+
     @Query(
             value = """
                     SELECT e.*
