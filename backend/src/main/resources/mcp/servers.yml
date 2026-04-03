@@ -16,11 +16,5 @@ servers:
     enabled: true
     timeoutMs: 12000
     auth:
-      type: none
-      # bearer 示例（推荐环境变量）：
-      # type: bearer
-      # tokenEnv: MCP_LOCAL_OPS_BEARER_TOKEN
-      # api key 示例：
-      # type: apikey
-      # tokenEnv: MCP_LOCAL_OPS_API_KEY
-      # headerName: x-api-key
+      type: bearer
+      tokenEnv: MCP_LOCAL_OPS_BEARER_TOKEN
