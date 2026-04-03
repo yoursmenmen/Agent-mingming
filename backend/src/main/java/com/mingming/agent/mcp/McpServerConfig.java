@@ -8,6 +8,7 @@ public record McpServerConfig(
         String transport,
         String url,
         String command,
+        String workingDir,
         List<String> args,
         Map<String, String> env,
         String streaming,
@@ -23,6 +24,6 @@ public record McpServerConfig(
             String streaming,
             boolean enabled,
             int timeoutMs) {
-        this(name, transport, url, null, List.of(), Map.of(), streaming, enabled, timeoutMs, null);
+        this(name, transport, url, null, null, List.of(), Map.of(), streaming, enabled, timeoutMs, null);
     }
 }
