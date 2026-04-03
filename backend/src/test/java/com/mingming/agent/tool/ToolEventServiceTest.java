@@ -6,7 +6,12 @@ import static org.mockito.Mockito.verify;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mingming.agent.entity.RunEventEntity;
+import com.mingming.agent.event.contract.EventContractRegistry;
+import com.mingming.agent.event.contract.McpConfirmResultEventContract;
+import com.mingming.agent.event.contract.RetrievalResultEventContract;
+import com.mingming.agent.event.contract.ToolResultEventContract;
 import com.mingming.agent.repository.RunEventRepository;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,7 +35,7 @@ class ToolEventServiceTest {
                 "runId", runId.toString(),
                 "seqCounter", new AtomicInteger(3)));
 
-        ToolEventService service = new ToolEventService(runEventRepository, new ObjectMapper());
+        ToolEventService service = new ToolEventService(runEventRepository, new ObjectMapper(), newRegistry());
         service.recordToolCall(toolContext, "add", Map.of("a", 1, "b", 2));
 
         ArgumentCaptor<RunEventEntity> captor = ArgumentCaptor.forClass(RunEventEntity.class);
@@ -45,5 +50,12 @@ class ToolEventServiceTest {
         assertThat(payload.path("tool").asText()).isEqualTo("add");
         assertThat(payload.path("data").path("a").asInt()).isEqualTo(1);
         assertThat(payload.path("data").path("b").asInt()).isEqualTo(2);
+    }
+
+    private EventContractRegistry newRegistry() {
+        return new EventContractRegistry(List.of(
+                new ToolResultEventContract(),
+                new McpConfirmResultEventContract(),
+                new RetrievalResultEventContract()));
     }
 }

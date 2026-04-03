@@ -101,6 +101,7 @@ public class RetrievalEventService {
         stats.put("updated", summary == null ? 0 : summary.updated());
         stats.put("softDeleted", summary == null ? 0 : summary.softDeleted());
         stats.put("unchanged", summary == null ? 0 : summary.unchanged());
+        payload = eventContractRegistry.normalizeAndValidate(RunEventType.RAG_SYNC, payload);
 
         if (runId == null || seq <= 0) {
             log.info("RAG_SYNC event: {}", payload);

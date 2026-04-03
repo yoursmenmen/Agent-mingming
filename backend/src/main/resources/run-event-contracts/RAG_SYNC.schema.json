@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RAG_SYNC payload",
+  "type": "object",
+  "required": ["schemaVersion", "phase", "trigger", "error", "stats"],
+  "properties": {
+    "schemaVersion": { "const": "rag-sync.v1" },
+    "phase": { "type": "string" },
+    "trigger": { "type": "string" },
+    "error": { "type": "string" },
+    "stats": {
+      "type": "object",
+      "required": ["inserted", "updated", "softDeleted", "unchanged"],
+      "properties": {
+        "inserted": { "type": "integer", "minimum": 0 },
+        "updated": { "type": "integer", "minimum": 0 },
+        "softDeleted": { "type": "integer", "minimum": 0 },
+        "unchanged": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -5,6 +5,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.mingming.agent.service.RunEventQueryService;
+import com.mingming.agent.service.RunMetricsService;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -19,9 +20,12 @@ class RunsControllerTest {
     @Mock
     private RunEventQueryService runEventQueryService;
 
+    @Mock
+    private RunMetricsService runMetricsService;
+
     @Test
     void getRunEvents_shouldDelegateToService() {
-        RunsController controller = new RunsController(runEventQueryService);
+        RunsController controller = new RunsController(runEventQueryService, runMetricsService);
         UUID runId = UUID.randomUUID();
         List<Map<String, Object>> expected = List.of(Map.of("runId", runId, "seq", 1));
         when(runEventQueryService.getRunEvents(runId)).thenReturn(expected);
@@ -34,7 +38,7 @@ class RunsControllerTest {
 
     @Test
     void getSessionEvents_shouldDelegateToService() {
-        RunsController controller = new RunsController(runEventQueryService);
+        RunsController controller = new RunsController(runEventQueryService, runMetricsService);
         UUID sessionId = UUID.randomUUID();
         List<Map<String, Object>> expected = List.of(Map.of("sessionId", sessionId));
         when(runEventQueryService.getSessionEvents(sessionId)).thenReturn(expected);
@@ -43,5 +47,17 @@ class RunsControllerTest {
 
         assertThat(result).isEqualTo(expected);
         verify(runEventQueryService).getSessionEvents(sessionId);
+    }
+
+    @Test
+    void getRunEventMetrics_shouldDelegateToService() {
+        RunsController controller = new RunsController(runEventQueryService, runMetricsService);
+        Map<String, Object> expected = Map.of("windowHours", 24, "confirm_total", 2);
+        when(runMetricsService.getRunEventMetrics(24)).thenReturn(expected);
+
+        Map<String, Object> result = controller.getRunEventMetrics(24);
+
+        assertThat(result).isEqualTo(expected);
+        verify(runMetricsService).getRunEventMetrics(24);
     }
 }

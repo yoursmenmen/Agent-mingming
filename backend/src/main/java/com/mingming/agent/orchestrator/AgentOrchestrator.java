@@ -7,6 +7,7 @@ import com.mingming.agent.entity.AgentRunEntity;
 import com.mingming.agent.entity.ChatSessionEntity;
 import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.event.RunEventType;
+import com.mingming.agent.event.contract.EventContractRegistry;
 import com.mingming.agent.mcp.McpRuntimeToolCallbackFactory;
 import com.mingming.agent.rag.DocsChunk;
 import com.mingming.agent.rag.DocsChunkingService;
@@ -38,6 +39,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -66,6 +68,9 @@ public class AgentOrchestrator {
     private final HybridRetrievalService hybridRetrievalService;
     private final RetrievalEventService retrievalEventService;
     private final McpRuntimeToolCallbackFactory mcpRuntimeToolCallbackFactory;
+
+    @Autowired(required = false)
+    private EventContractRegistry eventContractRegistry;
 
     public record RunInit(UUID sessionId, UUID runId) {}
 
@@ -103,8 +108,12 @@ public class AgentOrchestrator {
         e.setSeq(seq);
         e.setCreatedAt(OffsetDateTime.now());
         e.setType(type.name());
+        ObjectNode normalizedPayload = payload == null ? objectMapper.createObjectNode() : payload;
+        if (eventContractRegistry != null) {
+            normalizedPayload = eventContractRegistry.normalizeAndValidate(type, normalizedPayload);
+        }
         try {
-            e.setPayload(objectMapper.writeValueAsString(payload));
+            e.setPayload(objectMapper.writeValueAsString(normalizedPayload));
         } catch (Exception ex) {
             e.setPayload("{\"error\":\"failed to serialize payload\"}");
         }

@@ -82,6 +82,10 @@ const emit = defineEmits<{
             <dt>工具错误数</dt>
             <dd>{{ runMetrics.tool_error_total }}</dd>
           </div>
+          <div>
+            <dt>契约告警数</dt>
+            <dd>{{ runMetrics.contract_warning_total }}</dd>
+          </div>
         </dl>
       </section>
     </div>

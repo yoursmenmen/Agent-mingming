@@ -151,11 +151,15 @@
   - `TOOL_RESULT.schema.json`
   - `MCP_CONFIRM_RESULT.schema.json`
   - `RETRIEVAL_RESULT.schema.json`
+  - `MCP_TOOLS_BOUND.schema.json`
+  - `RAG_SYNC.schema.json`
 - 注册表：`backend/src/main/java/com/mingming/agent/event/contract/EventContractRegistry.java`
 - 合同实现：
   - `ToolResultEventContract`
   - `McpConfirmResultEventContract`
   - `RetrievalResultEventContract`
+  - `McpToolsBoundEventContract`
+  - `RagSyncEventContract`
 
 接入方式：
 
@@ -168,5 +172,9 @@
 - `ToolEventService`（`TOOL_RESULT`）
 - `McpToolService`（`MCP_CONFIRM_RESULT`）
 - `RetrievalEventService`（`RETRIEVAL_RESULT`）
+- `AgentOrchestrator.appendEvent`（`MCP_TOOLS_BOUND`）
+- `RetrievalEventService.recordRagSync`（`RAG_SYNC`）
 
 这一步的价值是把“散落在业务代码里的字段补齐逻辑”收敛成“项目级契约资产”，后续新增事件可复用同一模式。
+
+另外，运行指标已增加 `contract_warning_total`，用于统计窗口内事件契约告警总量，便于观测 schema 漂移风险。

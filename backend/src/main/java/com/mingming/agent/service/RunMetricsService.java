@@ -28,7 +28,7 @@ public class RunMetricsService {
         OffsetDateTime from = now.minusHours(windowHours);
 
         List<RunEventEntity> events = runEventRepository.findByTypeInAndCreatedAtAfter(
-                List.of("TOOL_CALL", "TOOL_RESULT", "MCP_CONFIRM_RESULT"), from);
+                List.of("TOOL_CALL", "TOOL_RESULT", "MCP_CONFIRM_RESULT", "MCP_TOOLS_BOUND", "RAG_SYNC", "RETRIEVAL_RESULT"), from);
 
         int toolCallTotal = 0;
         int toolResultTotal = 0;
@@ -37,22 +37,27 @@ public class RunMetricsService {
         int confirmSuccessTotal = 0;
         int confirmFailedTotal = 0;
         int confirmRejectedTotal = 0;
+        int contractWarningTotal = 0;
 
         for (RunEventEntity event : events) {
             if (event == null || event.getType() == null) {
                 continue;
             }
+            JsonNode root = readJson(event.getPayload());
+            if (hasContractWarnings(root)) {
+                contractWarningTotal++;
+            }
             switch (event.getType()) {
                 case "TOOL_CALL" -> toolCallTotal++;
                 case "TOOL_RESULT" -> {
                     toolResultTotal++;
-                    if (isToolResultError(event.getPayload())) {
+                    if (isToolResultError(root)) {
                         toolErrorTotal++;
                     }
                 }
                 case "MCP_CONFIRM_RESULT" -> {
                     confirmTotal++;
-                    String status = readConfirmStatus(event.getPayload());
+                    String status = readConfirmStatus(root);
                     switch (status) {
                         case "CONFIRMED_EXECUTED" -> confirmSuccessTotal++;
                         case "CONFIRM_EXECUTION_FAILED" -> confirmFailedTotal++;
@@ -79,6 +84,7 @@ public class RunMetricsService {
         payload.put("confirm_success_total", confirmSuccessTotal);
         payload.put("confirm_failed_total", confirmFailedTotal);
         payload.put("confirm_rejected_total", confirmRejectedTotal);
+        payload.put("contract_warning_total", contractWarningTotal);
         return payload;
     }
 
@@ -95,8 +101,7 @@ public class RunMetricsService {
         return hours;
     }
 
-    private boolean isToolResultError(String payloadText) {
-        JsonNode root = readJson(payloadText);
+    private boolean isToolResultError(JsonNode root) {
         if (root == null || !root.isObject()) {
             return true;
         }
@@ -111,8 +116,7 @@ public class RunMetricsService {
         return "FAILED".equals(status) || "BLOCKED_POLICY".equals(status) || "CONFIRM_EXECUTION_FAILED".equals(status);
     }
 
-    private String readConfirmStatus(String payloadText) {
-        JsonNode root = readJson(payloadText);
+    private String readConfirmStatus(JsonNode root) {
         if (root == null || !root.isObject()) {
             return "UNKNOWN";
         }
@@ -121,6 +125,13 @@ public class RunMetricsService {
             return "UNKNOWN";
         }
         return status;
+    }
+
+    private boolean hasContractWarnings(JsonNode root) {
+        if (root == null || !root.isObject()) {
+            return false;
+        }
+        return !root.path("contractWarnings").asText("").isBlank();
     }
 
     private JsonNode readJson(String payloadText) {

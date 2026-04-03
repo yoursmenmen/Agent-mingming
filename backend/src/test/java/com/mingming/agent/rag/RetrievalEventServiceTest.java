@@ -6,6 +6,10 @@ import static org.mockito.Mockito.verify;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mingming.agent.entity.RunEventEntity;
+import com.mingming.agent.event.contract.EventContractRegistry;
+import com.mingming.agent.event.contract.McpConfirmResultEventContract;
+import com.mingming.agent.event.contract.RetrievalResultEventContract;
+import com.mingming.agent.event.contract.ToolResultEventContract;
 import com.mingming.agent.repository.RunEventRepository;
 import java.util.List;
 import java.util.UUID;
@@ -25,7 +29,7 @@ class RetrievalEventServiceTest {
 
     @Test
     void record_shouldPersistRetrievalEventWhenNoHits() throws Exception {
-        RetrievalEventService service = new RetrievalEventService(runEventRepository, objectMapper);
+        RetrievalEventService service = new RetrievalEventService(runEventRepository, objectMapper, newRegistry());
         UUID runId = UUID.randomUUID();
 
         service.record(runId, 2, "无命中查询", List.of());
@@ -51,7 +55,7 @@ class RetrievalEventServiceTest {
 
     @Test
     void record_shouldPersistMetadataAndSnippetInsteadOfFullContentForMultipleHits() throws Exception {
-        RetrievalEventService service = new RetrievalEventService(runEventRepository, objectMapper);
+        RetrievalEventService service = new RetrievalEventService(runEventRepository, objectMapper, newRegistry());
         UUID runId = UUID.randomUUID();
         String longContent = "A".repeat(400);
 
@@ -95,7 +99,7 @@ class RetrievalEventServiceTest {
 
     @Test
     void record_shouldUseExplicitRetrievalMetaAndHitSourceWhenProvided() throws Exception {
-        RetrievalEventService service = new RetrievalEventService(runEventRepository, objectMapper);
+        RetrievalEventService service = new RetrievalEventService(runEventRepository, objectMapper, newRegistry());
         UUID runId = UUID.randomUUID();
 
         List<RetrievalEventService.RetrievalResultHit> hits = List.of(new RetrievalEventService.RetrievalResultHit(
@@ -119,5 +123,12 @@ class RetrievalEventServiceTest {
         assertThat(payload.path("finalHitCount").asInt()).isEqualTo(1);
         assertThat(payload.path("hits")).hasSize(1);
         assertThat(payload.path("hits").get(0).path("source").asText()).isEqualTo("vector");
+    }
+
+    private EventContractRegistry newRegistry() {
+        return new EventContractRegistry(List.of(
+                new ToolResultEventContract(),
+                new McpConfirmResultEventContract(),
+                new RetrievalResultEventContract()));
     }
 }

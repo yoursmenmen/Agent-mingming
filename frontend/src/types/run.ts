@@ -98,4 +98,5 @@ export interface RunEventMetrics {
   confirm_success_total: number
   confirm_failed_total: number
   confirm_rejected_total: number
+  contract_warning_total: number
 }

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MCP_TOOLS_BOUND payload",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "localToolCount",
+    "mcpToolCount",
+    "totalToolCount",
+    "injectedMcpTools",
+    "blockedMcpTools",
+    "mcpDiscoveryErrors"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "mcp-tools-bound.v1" },
+    "localToolCount": { "type": "integer", "minimum": 0 },
+    "mcpToolCount": { "type": "integer", "minimum": 0 },
+    "totalToolCount": { "type": "integer", "minimum": 0 },
+    "injectedMcpTools": { "type": "array" },
+    "blockedMcpTools": { "type": "array" },
+    "mcpDiscoveryErrors": { "type": "array" }
+  },
+  "additionalProperties": true
+}
