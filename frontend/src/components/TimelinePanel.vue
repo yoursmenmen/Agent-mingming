@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import type { TimelineItem } from '../types/run'
 
 const props = defineProps<{
@@ -7,6 +8,107 @@ const props = defineProps<{
   timelineItems: TimelineItem[]
   formatTime: (value: string) => string
 }>()
+
+type TimelineRound = {
+  id: string
+  title: string
+  startedAt: string
+  items: TimelineItem[]
+  turnNumber: number
+  isSystem: boolean
+}
+
+const expandedRounds = ref<Record<string, boolean>>({})
+
+const roundGroups = computed<TimelineRound[]>(() => {
+  const rounds: TimelineRound[] = []
+  let current: TimelineRound | null = null
+  let turnNumber = 0
+
+  for (const item of props.timelineItems) {
+    if (item.type === 'USER_MESSAGE') {
+      turnNumber += 1
+      const next: TimelineRound = {
+        id: `round-${item.id}-${item.seq}`,
+        title: buildRoundTitle(item.summary),
+        startedAt: item.createdAt,
+        items: [item],
+        turnNumber,
+        isSystem: false,
+      }
+      if (current) {
+        rounds.push(current)
+      }
+      current = next
+      continue
+    }
+
+    if (!current) {
+      current = {
+        id: `round-system-${item.id}-${item.seq}`,
+        title: '系统事件',
+        startedAt: item.createdAt,
+        items: [],
+        turnNumber: 0,
+        isSystem: true,
+      }
+    }
+    current.items.push(item)
+  }
+
+  if (current) {
+    rounds.push(current)
+  }
+
+  return rounds
+})
+
+watch(
+  roundGroups,
+  (groups) => {
+    const nextState: Record<string, boolean> = {}
+    for (const group of groups) {
+      nextState[group.id] = expandedRounds.value[group.id] ?? false
+    }
+
+    const hasExpanded = Object.values(nextState).some(Boolean)
+    if (!hasExpanded && groups.length > 0) {
+      const latest = groups[groups.length - 1]
+      nextState[latest.id] = true
+    }
+    expandedRounds.value = nextState
+  },
+  { immediate: true },
+)
+
+function toggleRound(roundId: string): void {
+  expandedRounds.value = {
+    ...expandedRounds.value,
+    [roundId]: !expandedRounds.value[roundId],
+  }
+}
+
+function isRoundExpanded(roundId: string): boolean {
+  return Boolean(expandedRounds.value[roundId])
+}
+
+function roundLabel(round: TimelineRound): string {
+  if (round.isSystem) {
+    return '系统轮次'
+  }
+  return `第 ${round.turnNumber} 轮`
+}
+
+function buildRoundTitle(summary: string): string {
+  const trimmed = summary.trim()
+  if (!trimmed) {
+    return '用户提问'
+  }
+  if (trimmed.length <= 42) {
+    return trimmed
+  }
+  return `${trimmed.slice(0, 42)}...`
+}
 
 function badgeLabel(item: TimelineItem): string {
   if (item.type === 'MCP_CONFIRM_RESULT') {
@@ -54,31 +156,51 @@ function badgeTone(item: TimelineItem): 'success' | 'danger' | 'muted' {
     <div class="timeline-panel-body pane-body">
       <div v-if="!props.timelineItems.length" class="empty-state">发送第一条消息后，这里会出现会话级事件时间线。</div>
 
-      <ol v-else class="timeline-list">
-        <li v-for="item in props.timelineItems" :key="`${item.source}-${item.id}-${item.seq}`" class="timeline-item">
-          <div class="timeline-node"></div>
-          <div class="timeline-card">
-            <div class="timeline-meta">
-              <strong>{{ item.type }}</strong>
-              <div class="timeline-meta-right">
-                <span
-                  v-if="badgeLabel(item)"
-                  class="timeline-event-badge"
-                  :data-tone="badgeTone(item)"
-                >
-                  {{ badgeLabel(item) }}
-                </span>
-                <span>{{ props.formatTime(item.createdAt) }}</span>
-              </div>
+      <div v-else class="timeline-rounds">
+        <section v-for="round in roundGroups" :key="round.id" class="timeline-round">
+          <button
+            class="timeline-round-header"
+            type="button"
+            :aria-expanded="isRoundExpanded(round.id)"
+            @click="toggleRound(round.id)"
+          >
+            <div class="timeline-round-labels">
+              <strong>{{ roundLabel(round) }}</strong>
+              <span>{{ round.title }}</span>
             </div>
-            <p>{{ item.summary }}</p>
-            <details>
-              <summary>查看原始 payload</summary>
-              <pre>{{ item.rawPayload }}</pre>
-            </details>
-          </div>
-        </li>
-      </ol>
+            <div class="timeline-round-meta">
+              <span>{{ round.items.length }} 条事件</span>
+              <span>{{ props.formatTime(round.startedAt) }}</span>
+            </div>
+          </button>
+
+          <ol v-show="isRoundExpanded(round.id)" class="timeline-list">
+            <li v-for="item in round.items" :key="`${item.source}-${item.id}-${item.seq}`" class="timeline-item">
+              <div class="timeline-node"></div>
+              <div class="timeline-card">
+                <div class="timeline-meta">
+                  <strong>{{ item.type }}</strong>
+                  <div class="timeline-meta-right">
+                    <span
+                      v-if="badgeLabel(item)"
+                      class="timeline-event-badge"
+                      :data-tone="badgeTone(item)"
+                    >
+                      {{ badgeLabel(item) }}
+                    </span>
+                    <span>{{ props.formatTime(item.createdAt) }}</span>
+                  </div>
+                </div>
+                <p>{{ item.summary }}</p>
+                <details>
+                  <summary>查看原始 payload</summary>
+                  <pre>{{ item.rawPayload }}</pre>
+                </details>
+              </div>
+            </li>
+          </ol>
+        </section>
+      </div>
     </div>
   </section>
 </template>
