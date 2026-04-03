@@ -315,3 +315,50 @@ python tools/mcp/local_ops_mcp.py
 - 输出做了长度裁剪
 
 > 建议：即使是本地测试，也尽量先用 `fetch_page` 和只读工具，不要默认开启命令执行。
+
+## 11. MCP Onboarding MVP（给 GitHub 链接生成接入计划）
+
+你也可以直接在聊天里让 Agent 执行：
+
+- `请为 https://github.com/arjun1194/insta-mcp 生成接入计划，先不要执行`
+- 确认计划后再说：`我同意，执行接入（runInstall=false）`
+
+Agent 内部会调用：
+
+- `mcp_onboarding_plan`
+- `mcp_onboarding_apply`（需要 `approved=true` 才会执行）
+
+### 11.1 生成计划
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer dev-token-change-me" \
+  -H "Content-Type: application/json" \
+  http://localhost:18080/api/mcp/onboarding/plan \
+  -d '{
+    "repoUrl": "https://github.com/arjun1194/insta-mcp",
+    "serverName": "insta-mcp",
+    "preferredTransport": "stdio"
+  }'
+```
+
+### 11.2 执行 apply（MVP）
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer dev-token-change-me" \
+  -H "Content-Type: application/json" \
+  http://localhost:18080/api/mcp/onboarding/apply \
+  -d '{
+    "repoUrl": "https://github.com/arjun1194/insta-mcp",
+    "serverName": "insta-mcp",
+    "preferredTransport": "stdio",
+    "runInstall": false
+  }'
+```
+
+说明：
+
+- MVP 目前优先支持 `stdio` 自动接入；
+- 会 clone/pull 到 `AGENT_MCP_ONBOARDING_WORKSPACE_ROOT`，并写入 `mcp/servers.yml`；
+- 建议先 `runInstall=false` 看计划，再按需开启安装命令执行。

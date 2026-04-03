@@ -43,6 +43,9 @@ agent:
     confirmation:
       enabled: ${AGENT_MCP_CONFIRMATION_ENABLED:true}
       pending-ttl-seconds: ${AGENT_MCP_CONFIRMATION_PENDING_TTL_SECONDS:300}
+    onboarding:
+      workspace-root: ${AGENT_MCP_ONBOARDING_WORKSPACE_ROOT:.mcp-onboarding}
+      command-timeout-seconds: ${AGENT_MCP_ONBOARDING_COMMAND_TIMEOUT_SECONDS:120}
   rag:
     vector:
       enabled: ${AGENT_RAG_VECTOR_ENABLED:true}

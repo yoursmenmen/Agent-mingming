@@ -1,6 +1,7 @@
 package com.mingming.agent.controller;
 
 import com.mingming.agent.mcp.McpToolService;
+import com.mingming.agent.mcp.McpOnboardingService;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -18,6 +19,7 @@ public class McpController {
     private static final Logger log = LoggerFactory.getLogger(McpController.class);
 
     private final McpToolService mcpToolService;
+    private final McpOnboardingService mcpOnboardingService;
 
     @GetMapping("/api/mcp/servers")
     public Object listServers() {
@@ -77,7 +79,27 @@ public class McpController {
         }
     }
 
+    @PostMapping("/api/mcp/onboarding/plan")
+    public Object createOnboardingPlan(@RequestBody McpOnboardingPlanRequest request) {
+        log.info("MCP API called: /api/mcp/onboarding/plan, repoUrl={}", request.repoUrl());
+        return mcpOnboardingService.createPlan(request.repoUrl(), request.serverName(), request.preferredTransport());
+    }
+
+    @PostMapping("/api/mcp/onboarding/apply")
+    public Object applyOnboardingPlan(@RequestBody McpOnboardingApplyRequest request) {
+        log.info("MCP API called: /api/mcp/onboarding/apply, repoUrl={}, runInstall={}", request.repoUrl(), request.runInstall());
+        return mcpOnboardingService.applyPlan(
+                request.repoUrl(),
+                request.serverName(),
+                request.preferredTransport(),
+                request.runInstall());
+    }
+
     public record McpToolCallRequest(String server, String toolName, Map<String, Object> arguments) {}
 
     public record McpServerEnabledRequest(String server, boolean enabled) {}
+
+    public record McpOnboardingPlanRequest(String repoUrl, String serverName, String preferredTransport) {}
+
+    public record McpOnboardingApplyRequest(String repoUrl, String serverName, String preferredTransport, boolean runInstall) {}
 }
