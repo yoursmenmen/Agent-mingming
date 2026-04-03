@@ -47,7 +47,20 @@ export async function fetchRunEventMetrics(hours = 24): Promise<RunEventMetrics>
     throw new Error(`获取运行指标失败：${response.status}`)
   }
 
-  return response.json() as Promise<RunEventMetrics>
+  const raw = (await response.json()) as Partial<RunEventMetrics>
+  return {
+    windowHours: Number(raw.windowHours ?? hours),
+    from: String(raw.from ?? ''),
+    to: String(raw.to ?? ''),
+    tool_call_total: Number(raw.tool_call_total ?? 0),
+    tool_result_total: Number(raw.tool_result_total ?? 0),
+    tool_error_total: Number(raw.tool_error_total ?? 0),
+    confirm_total: Number(raw.confirm_total ?? 0),
+    confirm_success_total: Number(raw.confirm_success_total ?? 0),
+    confirm_failed_total: Number(raw.confirm_failed_total ?? 0),
+    confirm_rejected_total: Number(raw.confirm_rejected_total ?? 0),
+    contract_warning_total: Number(raw.contract_warning_total ?? 0),
+  }
 }
 
 export async function fetchSessionEvents(sessionId: string): Promise<RunEventItem[]> {

@@ -60,31 +60,31 @@ const emit = defineEmits<{
         <dl class="status-grid status-grid--metrics">
           <div>
             <dt>命令确认总数</dt>
-            <dd>{{ runMetrics.confirm_total }}</dd>
+            <dd>{{ runMetrics.confirm_total ?? 0 }}</dd>
           </div>
           <div>
             <dt>确认成功</dt>
-            <dd>{{ runMetrics.confirm_success_total }}</dd>
+            <dd>{{ runMetrics.confirm_success_total ?? 0 }}</dd>
           </div>
           <div>
             <dt>确认失败</dt>
-            <dd>{{ runMetrics.confirm_failed_total }}</dd>
+            <dd>{{ runMetrics.confirm_failed_total ?? 0 }}</dd>
           </div>
           <div>
             <dt>确认拒绝</dt>
-            <dd>{{ runMetrics.confirm_rejected_total }}</dd>
+            <dd>{{ runMetrics.confirm_rejected_total ?? 0 }}</dd>
           </div>
           <div>
             <dt>工具调用数</dt>
-            <dd>{{ runMetrics.tool_call_total }}</dd>
+            <dd>{{ runMetrics.tool_call_total ?? 0 }}</dd>
           </div>
           <div>
             <dt>工具错误数</dt>
-            <dd>{{ runMetrics.tool_error_total }}</dd>
+            <dd>{{ runMetrics.tool_error_total ?? 0 }}</dd>
           </div>
           <div>
             <dt>契约告警数</dt>
-            <dd>{{ runMetrics.contract_warning_total }}</dd>
+            <dd>{{ runMetrics.contract_warning_total ?? 0 }}</dd>
           </div>
         </dl>
       </section>
