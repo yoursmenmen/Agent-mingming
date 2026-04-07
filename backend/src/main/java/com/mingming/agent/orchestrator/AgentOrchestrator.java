@@ -9,6 +9,10 @@ import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.event.RunEventType;
 import com.mingming.agent.event.contract.EventContractRegistry;
 import com.mingming.agent.mcp.McpRuntimeToolCallbackFactory;
+import com.mingming.agent.orchestrator.loop.AgentRunLoopService;
+import com.mingming.agent.orchestrator.loop.LoopExecutionReport;
+import com.mingming.agent.orchestrator.loop.LoopStepResult;
+import com.mingming.agent.orchestrator.loop.LoopTerminationPolicy;
 import com.mingming.agent.rag.DocsChunk;
 import com.mingming.agent.rag.DocsChunkingService;
 import com.mingming.agent.rag.HybridRetrievalService;
@@ -72,6 +76,8 @@ public class AgentOrchestrator {
     @Autowired(required = false)
     private EventContractRegistry eventContractRegistry;
 
+    private final AgentRunLoopService agentRunLoopService;
+
     public record RunInit(UUID sessionId, UUID runId) {}
 
     public RunInit startRun(UUID sessionId, String model, Double temperature, Double topP, String systemPromptVersion) {
@@ -102,15 +108,34 @@ public class AgentOrchestrator {
     }
 
     public void appendEvent(UUID runId, int seq, RunEventType type, ObjectNode payload) {
+        appendEvent(runId, seq, type.name(), payload);
+    }
+
+    public void executeSingleTurn(
+            UUID runId, UUID sessionId, String userText, java.util.function.Consumer<String> sseDataConsumer) {
+        AtomicInteger seq = new AtomicInteger(1);
+        LoopTerminationPolicy policy = new LoopTerminationPolicy(1, null, null);
+        executeLoop(
+                runId,
+                seq,
+                policy,
+                turnIndex -> {
+                    runOnce(runId, sessionId, userText, sseDataConsumer, seq);
+                    return new LoopStepResult(true, false);
+                });
+    }
+
+    public void appendEvent(UUID runId, int seq, String type, ObjectNode payload) {
         RunEventEntity e = new RunEventEntity();
         e.setId(UUID.randomUUID());
         e.setRunId(runId);
         e.setSeq(seq);
         e.setCreatedAt(OffsetDateTime.now());
-        e.setType(type.name());
+        e.setType(type);
         ObjectNode normalizedPayload = payload == null ? objectMapper.createObjectNode() : payload;
-        if (eventContractRegistry != null) {
-            normalizedPayload = eventContractRegistry.normalizeAndValidate(type, normalizedPayload);
+        if (eventContractRegistry != null && isKnownRunEventType(type)) {
+            RunEventType runEventType = RunEventType.valueOf(type);
+            normalizedPayload = eventContractRegistry.normalizeAndValidate(runEventType, normalizedPayload);
         }
         try {
             e.setPayload(objectMapper.writeValueAsString(normalizedPayload));
@@ -120,13 +145,48 @@ public class AgentOrchestrator {
         runEventRepository.save(e);
     }
 
+    LoopExecutionReport executeLoop(
+            UUID runId,
+            AtomicInteger seq,
+            LoopTerminationPolicy policy,
+            AgentRunLoopService.LoopTurnExecutor turnExecutor) {
+        return agentRunLoopService.execute(policy, turnExecutor, (type, turnIndex, elapsedMs, payload) -> {
+            ObjectNode eventPayload = objectMapper.createObjectNode();
+            eventPayload.put("turnIndex", turnIndex);
+            eventPayload.put("elapsedMs", elapsedMs);
+            if (payload != null && !payload.isEmpty()) {
+                eventPayload.setAll(objectMapper.convertValue(payload, ObjectNode.class));
+            }
+            appendEvent(runId, seq.getAndIncrement(), type, eventPayload);
+        });
+    }
+
+    private boolean isKnownRunEventType(String type) {
+        if (type == null || type.isBlank()) {
+            return false;
+        }
+        try {
+            RunEventType.valueOf(type);
+            return true;
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
     /**
      * MVP streaming: currently emits MODEL_MESSAGE once (non-token streaming).
      * We'll evolve to true token streaming after confirming provider streaming behavior.
      */
     public void runOnce(UUID runId, UUID sessionId, String userText, java.util.function.Consumer<String> sseDataConsumer) {
-        AtomicInteger seq = new AtomicInteger(1);
+        runOnce(runId, sessionId, userText, sseDataConsumer, new AtomicInteger(1));
+    }
 
+    private void runOnce(
+            UUID runId,
+            UUID sessionId,
+            String userText,
+            java.util.function.Consumer<String> sseDataConsumer,
+            AtomicInteger seq) {
         ObjectNode userPayload = objectMapper.createObjectNode();
         userPayload.put("content", userText);
         appendEvent(runId, seq.getAndIncrement(), RunEventType.USER_MESSAGE, userPayload);

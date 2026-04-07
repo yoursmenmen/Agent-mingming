@@ -54,6 +54,14 @@ export interface OnboardingPlanCard {
 
 export type RunStatus = 'idle' | 'streaming' | 'done' | 'error'
 
+export interface LoopStatus {
+  currentTurn: number | null
+  maxTurns: number | null
+  elapsedMs: number | null
+  terminationReason: string | null
+  active: boolean
+}
+
 export interface ToolInfo {
   name: string
   description: string

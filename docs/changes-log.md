@@ -343,3 +343,33 @@ Flyway migrations：
 ### 文档同步
 - 更新：`docs/config-reference.md`、`docs/mcp-local-ops-guide.md`、`docs/README.md`
 - 新增：`docs/progress-status.md`（当前阶段快照与已知问题/下一步）
+
+## 15) 2026-04-07 迭代（单 run 显式 loop 与可观测回归）
+
+### 后端：单 run 显式 loop 主链路落地
+- `AgentOrchestrator` 引入 `AgentRunLoopService` 执行显式 loop，并新增 `executeSingleTurn(...)` 作为当前入口。
+- 当前终止策略为 `LoopTerminationPolicy(maxRounds=1)`：单次请求内只执行 1 轮 turn，但执行形态已经统一到 loop 模型，便于后续扩展多轮决策。
+- loop 生命周期事件的类型与回调骨架已就位；当前 `executeSingleTurn(...)` 调 loop 时事件监听器仍为 no-op，尚未接入 `run_event` 持久化/回放主链路。
+
+### 后端：事件模型扩展（loop 可观测）
+- `RunEventType` 新增并启用：
+  - `LOOP_TURN_STARTED`
+  - `LOOP_TURN_FINISHED`
+  - `LOOP_TERMINATED`
+- `DefaultAgentRunLoopService` 可发出上述事件，覆盖“轮次开始/结束/终止”的执行轨迹；主入口持久化接入仍为后续事项。
+
+结果：当前已具备 loop 执行骨架与前端状态聚合能力；run 回放主链路暂仍以已落库事件（如工具事件、最终 `MODEL_MESSAGE`）为准。
+
+### 前端：loop 时间线与状态面板适配
+- `eventMapper` 新增 loop 事件摘要映射：
+  - `LOOP_TURN_STARTED` -> 展示轮次（含可选总轮次）
+  - `LOOP_TURN_FINISHED` -> 展示轮次耗时
+  - `LOOP_TERMINATED` -> 展示终止原因
+- `useChatConsole` 新增 `aggregateLoopStatusFromTimeline(...)`，从时间线聚合当前轮次、耗时、终止原因与 active 状态。
+- `RunStatusPanel` 新增 “Loop 状态” 区块，显示轮次、耗时、终止原因，和现有运行概览/指标并列。
+
+结果：控制台可同时看到“事件级时间线”和“聚合后的 loop 运行态”，便于联调与回归排查。
+
+### 阶段结论
+- “单 run 显式 loop” 已完成执行骨架与前端聚合接入；loop 事件持久化/回放主链路接入为后续事项。
+- 下一阶段将从“单 run 内 1 轮”扩展到“跨 run 的连续 loop 协调与状态衔接”。

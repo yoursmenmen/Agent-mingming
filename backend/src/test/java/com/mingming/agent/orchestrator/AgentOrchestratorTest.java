@@ -12,6 +12,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mingming.agent.entity.RunEventEntity;
 import com.mingming.agent.mcp.McpRuntimeToolCallbackFactory;
+import com.mingming.agent.orchestrator.loop.AgentRunLoopService;
+import com.mingming.agent.orchestrator.loop.DefaultAgentRunLoopService;
+import com.mingming.agent.orchestrator.loop.LoopExecutionReport;
+import com.mingming.agent.orchestrator.loop.LoopState;
+import com.mingming.agent.orchestrator.loop.LoopTerminationReason;
 import com.mingming.agent.rag.Bm25RetrieverService;
 import com.mingming.agent.rag.DocsChunk;
 import com.mingming.agent.rag.DocsChunkingService;
@@ -25,6 +30,8 @@ import com.mingming.agent.tool.LocalToolProvider;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -62,10 +69,51 @@ class AgentOrchestratorTest {
     @Mock
     private McpRuntimeToolCallbackFactory mcpRuntimeToolCallbackFactory;
 
+    @Mock
+    private AgentRunLoopService agentRunLoopService;
+
     private final VectorRagProperties vectorRagProperties = new VectorRagProperties();
 
     AgentOrchestratorTest() {
         vectorRagProperties.setDocsRoot("../docs");
+    }
+
+    @Test
+    void executeSingleTurn_shouldPersistLoopEventsFromMainEntry() throws Exception {
+        when(agentRunLoopService.execute(any(), any(), any())).thenAnswer(invocation -> {
+            AgentRunLoopService.LoopEventListener listener = invocation.getArgument(2);
+            listener.onEvent(DefaultAgentRunLoopService.EVENT_LOOP_TURN_STARTED, 1, 5L, Map.of("maxTurns", 1));
+            listener.onEvent(
+                    DefaultAgentRunLoopService.EVENT_LOOP_TURN_FINISHED,
+                    1,
+                    18L,
+                    Map.of("finalAnswerReady", true, "toolFailure", false, "consecutiveToolFailures", 0));
+            listener.onEvent(DefaultAgentRunLoopService.EVENT_LOOP_TERMINATED, 1, 19L, Map.of("reason", "FINAL_ANSWER"));
+            return new LoopExecutionReport(new LoopState(0L, 1, 0, true), Optional.of(LoopTerminationReason.FINAL_ANSWER));
+        });
+
+        AgentOrchestrator orchestrator = createOrchestrator();
+        UUID runId = UUID.randomUUID();
+
+        orchestrator.executeSingleTurn(runId, UUID.randomUUID(), "hello", payload -> {});
+
+        ArgumentCaptor<RunEventEntity> captor = ArgumentCaptor.forClass(RunEventEntity.class);
+        verify(runEventRepository, org.mockito.Mockito.times(3)).save(captor.capture());
+
+        List<RunEventEntity> savedEvents = captor.getAllValues();
+        assertThat(savedEvents).hasSize(3);
+        assertThat(savedEvents).extracting(RunEventEntity::getType)
+                .containsExactly(
+                        DefaultAgentRunLoopService.EVENT_LOOP_TURN_STARTED,
+                        DefaultAgentRunLoopService.EVENT_LOOP_TURN_FINISHED,
+                        DefaultAgentRunLoopService.EVENT_LOOP_TERMINATED);
+
+        ObjectMapper mapper = new ObjectMapper();
+        assertThat(mapper.readTree(savedEvents.get(0).getPayload()).path("turnIndex").asInt()).isEqualTo(1);
+        assertThat(mapper.readTree(savedEvents.get(0).getPayload()).path("elapsedMs").asLong()).isEqualTo(5L);
+        assertThat(mapper.readTree(savedEvents.get(0).getPayload()).path("maxTurns").asInt()).isEqualTo(1);
+        assertThat(mapper.readTree(savedEvents.get(1).getPayload()).path("elapsedMs").asLong()).isEqualTo(18L);
+        assertThat(mapper.readTree(savedEvents.get(2).getPayload()).path("reason").asText()).isEqualTo("FINAL_ANSWER");
     }
 
     @Test
@@ -400,6 +448,7 @@ class AgentOrchestratorTest {
                 vectorRagProperties,
                 hybridRetrievalService,
                 retrievalEventService,
-                mcpRuntimeToolCallbackFactory);
+                mcpRuntimeToolCallbackFactory,
+                agentRunLoopService);
     }
 }

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import type { RunEventMetrics } from '../types/run'
+import type { LoopStatus, RunEventMetrics } from '../types/run'
 
 defineProps<{
   statusLabel: string
   runId: string
   timelineCount: number
+  loopStatus?: LoopStatus | null
   isRefreshing: boolean
   runMetrics: RunEventMetrics | null
 }>()
@@ -48,6 +49,33 @@ const emit = defineEmits<{
           <div class="status-cell--wide">
             <dt>视图模式</dt>
             <dd>聊天 + 时间线</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section v-if="loopStatus" class="status-section">
+        <div class="status-section-head">
+          <h3>Loop 状态</h3>
+          <span class="status-window-pill">执行期</span>
+        </div>
+        <dl class="status-grid status-grid--overview">
+          <div>
+            <dt>轮次</dt>
+            <dd>
+              {{
+                loopStatus.maxTurns !== null
+                  ? `${loopStatus.currentTurn ?? '-'} / ${loopStatus.maxTurns}`
+                  : (loopStatus.currentTurn ?? '-')
+              }}
+            </dd>
+          </div>
+          <div>
+            <dt>耗时</dt>
+            <dd>{{ loopStatus.elapsedMs !== null ? `${loopStatus.elapsedMs}ms` : '-' }}</dd>
+          </div>
+          <div class="status-cell--wide">
+            <dt>终止原因</dt>
+            <dd>{{ loopStatus.terminationReason ?? (loopStatus.active ? '进行中' : '-') }}</dd>
           </div>
         </dl>
       </section>

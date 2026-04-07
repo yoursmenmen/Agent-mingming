@@ -239,6 +239,47 @@ function summarizeToolResultPayload(payload: unknown): string | null {
   return `工具结果 ${tool} | ${ok === true ? '成功' : '已返回'}`
 }
 
+function summarizeLoopPayload(payload: unknown, eventType: string): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+
+  const loopPayload = payload as {
+    turnIndex?: unknown
+    maxTurns?: unknown
+    elapsedMs?: unknown
+    reason?: unknown
+  }
+  const turn =
+    typeof loopPayload.turnIndex === 'number' && Number.isFinite(loopPayload.turnIndex) ? loopPayload.turnIndex : null
+  const maxTurns = typeof loopPayload.maxTurns === 'number' && Number.isFinite(loopPayload.maxTurns) ? loopPayload.maxTurns : null
+  const elapsedMs =
+    typeof loopPayload.elapsedMs === 'number' && Number.isFinite(loopPayload.elapsedMs) ? loopPayload.elapsedMs : null
+  const reason =
+    typeof loopPayload.reason === 'string' && loopPayload.reason.trim().length > 0 ? loopPayload.reason : 'unknown'
+  const turnText = turn === null ? '轮次未知' : `第 ${turn} 轮`
+
+  if (eventType === 'LOOP_TURN_STARTED') {
+    if (maxTurns === null) {
+      return `循环开始 | ${turnText}`
+    }
+    return `循环开始 | ${turnText} / 共 ${maxTurns} 轮`
+  }
+
+  if (eventType === 'LOOP_TURN_FINISHED') {
+    if (elapsedMs === null) {
+      return `循环结束 | ${turnText}`
+    }
+    return `循环结束 | ${turnText} | 耗时: ${elapsedMs}ms`
+  }
+
+  if (eventType === 'LOOP_TERMINATED') {
+    return `循环终止 | ${turnText} | 原因: ${reason}`
+  }
+
+  return null
+}
+
 function extractToolActionInfo(eventType: string | undefined, payload: unknown): Pick<TimelineItem, 'actionId' | 'actionState'> {
   if (!payload || typeof payload !== 'object') {
     return {}
@@ -321,6 +362,13 @@ export function summarizePayload(payload: unknown, eventType?: string): string {
     const toolResultSummary = summarizeToolResultPayload(payload)
     if (toolResultSummary) {
       return toolResultSummary
+    }
+  }
+
+  if (eventType === 'LOOP_TURN_STARTED' || eventType === 'LOOP_TURN_FINISHED' || eventType === 'LOOP_TERMINATED') {
+    const loopSummary = summarizeLoopPayload(payload, eventType)
+    if (loopSummary) {
+      return loopSummary
     }
   }
 
