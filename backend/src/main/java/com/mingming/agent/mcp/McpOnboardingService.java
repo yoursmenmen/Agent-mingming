@@ -1,7 +1,10 @@
 package com.mingming.agent.mcp;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -28,10 +31,18 @@ public class McpOnboardingService {
             Set.of("git", "npm", "pnpm", "yarn", "python", "python3", "pip", "pip3", "uv", "uvx", "node", "npx");
 
     private final List<McpRepoSourceAdapter> repoSourceAdapters;
-    private final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
+    private final ObjectMapper yamlMapper;
 
     public McpOnboardingService(List<McpRepoSourceAdapter> repoSourceAdapters) {
         this.repoSourceAdapters = repoSourceAdapters;
+        YAMLFactory yamlFactory = YAMLFactory.builder()
+                .enable(YAMLGenerator.Feature.MINIMIZE_QUOTES)
+                .enable(YAMLGenerator.Feature.INDENT_ARRAYS)
+                .disable(YAMLGenerator.Feature.WRITE_DOC_START_MARKER)
+                .build();
+        this.yamlMapper = new ObjectMapper(yamlFactory);
+        this.yamlMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        this.yamlMapper.enable(SerializationFeature.INDENT_OUTPUT);
     }
 
     @Value("${agent.mcp.onboarding.workspace-root:.mcp-onboarding}")
@@ -45,6 +56,8 @@ public class McpOnboardingService {
         String readme = repo.readmeText();
         List<String> installCommands = detectInstallCommands(readme);
         String startupCommand = detectStartupCommand(readme);
+        List<String> requiredEnv = detectRequiredEnvVariables(readme);
+        List<String> missingRequiredEnv = detectMissingEnv(requiredEnv);
 
         String transport = normalizeTransport(preferredTransport);
         String effectiveServerName = normalizeServerName(serverName, repo.repo());
@@ -58,7 +71,7 @@ public class McpOnboardingService {
             warnings.add("当前 MVP apply 仅自动写入 stdio 配置，http 需手工补充 url。");
         }
 
-        Map<String, Object> suggestedConfig = buildSuggestedConfig(effectiveServerName, transport, repoDir, startupCommand);
+        Map<String, Object> suggestedConfig = buildSuggestedConfig(effectiveServerName, transport, repoDir, startupCommand, requiredEnv);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("repoUrl", repoUrl);
         payload.put("source", repo.source());
@@ -70,6 +83,8 @@ public class McpOnboardingService {
         payload.put("cloneDir", repoDir.toString());
         payload.put("installCommands", installCommands);
         payload.put("startupCommand", startupCommand);
+        payload.put("requiredEnv", requiredEnv);
+        payload.put("missingRequiredEnv", missingRequiredEnv);
         payload.put("warnings", warnings);
         payload.put("suggestedServerConfig", suggestedConfig);
         payload.put("readyToApply", "stdio".equals(transport) && !startupCommand.isBlank());
@@ -96,6 +111,10 @@ public class McpOnboardingService {
                     "plan", plan);
         }
 
+        @SuppressWarnings("unchecked")
+        List<String> requiredEnv = (List<String>) plan.getOrDefault("requiredEnv", List.of());
+        List<String> missingRequiredEnv = detectMissingEnv(requiredEnv);
+
         Path repoDir = Paths.get(String.valueOf(plan.get("cloneDir"))).toAbsolutePath().normalize();
         List<Map<String, Object>> executed = new ArrayList<>();
         String cloneUrl = String.valueOf(plan.getOrDefault("cloneUrl", plan.get("repoUrl")));
@@ -118,12 +137,17 @@ public class McpOnboardingService {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ok", true);
-        result.put("status", "APPLIED");
+        result.put("status", missingRequiredEnv.isEmpty() ? "APPLIED" : "APPLIED_WITH_WARNINGS");
         result.put("repoDir", repoDir.toString());
         result.put("runInstall", runInstall);
         result.put("executedSteps", executed);
         result.put("restartRequired", true);
-        result.put("message", "已写入 mcp server 配置，重启后端后生效。");
+        if (missingRequiredEnv.isEmpty()) {
+            result.put("message", "已写入 mcp server 配置，重启后端后生效。");
+        } else {
+            result.put("message", "已写入 mcp server 配置，但仍缺少环境变量: " + String.join(", ", missingRequiredEnv));
+            result.put("missingRequiredEnv", missingRequiredEnv);
+        }
         result.put("plan", plan);
         return result;
     }
@@ -164,6 +188,8 @@ public class McpOnboardingService {
         if (readme == null || readme.isBlank()) {
             return "";
         }
+
+        List<CandidateCommand> candidates = new ArrayList<>();
         for (String block : extractShellBlocks(readme)) {
             for (String line : block.split("\\R")) {
                 String candidate = normalizeShellLine(line);
@@ -173,12 +199,35 @@ public class McpOnboardingService {
                 String lower = candidate.toLowerCase(Locale.ROOT);
                 boolean looksRuntime = lower.startsWith("python ") || lower.startsWith("node ") || lower.startsWith("npx ")
                         || lower.startsWith("uvx ") || lower.startsWith("uv run ") || lower.startsWith("npm run");
-                if (looksRuntime && (lower.contains("mcp") || lower.contains("server") || lower.contains("start"))) {
-                    return candidate;
+                if (!looksRuntime) {
+                    continue;
                 }
+
+                int score = 0;
+                if (lower.contains("mcp")) {
+                    score += 5;
+                }
+                if (lower.contains("server")) {
+                    score += 4;
+                }
+                if (lower.contains("start")) {
+                    score += 3;
+                }
+                if (lower.startsWith("npm run dev") || lower.startsWith("pnpm dev") || lower.startsWith("yarn dev")) {
+                    score += 3;
+                }
+                if (lower.contains("dev")) {
+                    score += 1;
+                }
+                candidates.add(new CandidateCommand(candidate, score));
             }
         }
-        return "";
+
+        return candidates.stream()
+                .sorted((a, b) -> Integer.compare(b.score(), a.score()))
+                .map(CandidateCommand::command)
+                .findFirst()
+                .orElse("");
     }
 
     private List<String> extractShellBlocks(String readme) {
@@ -201,6 +250,7 @@ public class McpOnboardingService {
         if (trimmed.startsWith("$") || trimmed.startsWith(">")) {
             trimmed = trimmed.substring(1).trim();
         }
+        trimmed = trimmed.replaceAll("\\s+#.*$", "").trim();
         return trimmed;
     }
 
@@ -226,7 +276,12 @@ public class McpOnboardingService {
         return root.toAbsolutePath().normalize().resolve(repo.owner() + "-" + repo.repo());
     }
 
-    private Map<String, Object> buildSuggestedConfig(String serverName, String transport, Path repoDir, String startupCommand) {
+    private Map<String, Object> buildSuggestedConfig(
+            String serverName,
+            String transport,
+            Path repoDir,
+            String startupCommand,
+            List<String> requiredEnv) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("name", serverName);
         payload.put("transport", transport);
@@ -237,9 +292,10 @@ public class McpOnboardingService {
         if ("stdio".equals(transport) && !startupCommand.isBlank()) {
             List<String> parts = splitCommand(startupCommand);
             if (!parts.isEmpty()) {
-                payload.put("command", parts.get(0));
+                payload.put("command", normalizeExecutable(parts.get(0)));
                 payload.put("args", parts.size() > 1 ? parts.subList(1, parts.size()) : List.of());
                 payload.put("workingDir", repoDir.toString());
+                payload.put("env", buildEnvPlaceholders(requiredEnv));
             }
         } else if ("http".equals(transport)) {
             payload.put("url", "http://127.0.0.1:9100");
@@ -274,7 +330,8 @@ public class McpOnboardingService {
             return Map.of("ok", false, "command", String.join(" ", command), "error", "command not allowed in onboarding MVP");
         }
 
-        ProcessBuilder builder = new ProcessBuilder(command);
+        List<String> effectiveCommand = normalizeInstallCommand(command);
+        ProcessBuilder builder = new ProcessBuilder(effectiveCommand);
         if (workingDir != null) {
             builder.directory(workingDir.toFile());
         }
@@ -292,14 +349,14 @@ public class McpOnboardingService {
             String clipped = output.length() > 3000 ? output.substring(0, 3000) : output;
             return Map.of(
                     "ok", process.exitValue() == 0,
-                    "command", String.join(" ", command),
+                    "command", String.join(" ", effectiveCommand),
                     "exitCode", process.exitValue(),
                     "elapsedMs", System.currentTimeMillis() - start,
                     "output", clipped);
         } catch (Exception ex) {
             return Map.of(
                     "ok", false,
-                    "command", String.join(" ", command),
+                    "command", String.join(" ", effectiveCommand),
                     "elapsedMs", System.currentTimeMillis() - start,
                     "error", ex.getMessage());
         }
@@ -324,7 +381,10 @@ public class McpOnboardingService {
 
         List<McpServerConfig> servers = new ArrayList<>();
         if (config != null && config.servers() != null) {
-            servers.addAll(config.servers());
+            servers.addAll(config.servers().stream()
+                    .map(this::sanitizeServerConfig)
+                    .filter(item -> item != null)
+                    .toList());
         }
 
         String name = String.valueOf(suggested.get("name"));
@@ -336,19 +396,32 @@ public class McpOnboardingService {
         @SuppressWarnings("unchecked")
         List<String> args = (List<String>) suggested.getOrDefault("args", List.of());
         String url = String.valueOf(suggested.getOrDefault("url", ""));
+        @SuppressWarnings("unchecked")
+        Map<String, String> suggestedEnv = (Map<String, String>) suggested.getOrDefault("env", Map.of());
+
+        String normalizedTransport = transport == null ? "" : transport.trim().toLowerCase(Locale.ROOT);
+        String effectiveUrl = "http".equals(normalizedTransport) ? (url == null || url.isBlank() ? null : url) : null;
+        String effectiveCommand = "stdio".equals(normalizedTransport) ? (command == null || command.isBlank() ? null : command) : null;
+        String effectiveWorkingDir = "stdio".equals(normalizedTransport)
+                ? (workingDir == null || workingDir.isBlank() ? null : workingDir)
+                : null;
+        List<String> effectiveArgs = "stdio".equals(normalizedTransport) ? (args == null ? List.of() : args) : null;
+        Map<String, String> effectiveEnv = "stdio".equals(normalizedTransport)
+                ? (suggestedEnv == null ? Map.of() : suggestedEnv)
+                : null;
 
         McpServerConfig serverConfig = new McpServerConfig(
                 name,
-                transport,
-                url,
-                command,
-                workingDir,
-                args,
-                Map.of(),
+                normalizedTransport,
+                effectiveUrl,
+                effectiveCommand,
+                effectiveWorkingDir,
+                effectiveArgs,
+                effectiveEnv,
                 "none",
                 true,
                 Integer.parseInt(String.valueOf(suggested.getOrDefault("timeoutMs", 12000))),
-                new McpAuthConfig("none", "", "x-api-key"));
+                new McpAuthConfig("none", null, null, null));
         servers.add(serverConfig);
 
         try {
@@ -378,5 +451,125 @@ public class McpOnboardingService {
         }
         return List.of(commandLine.trim().split("\\s+"));
     }
+
+    private List<String> detectRequiredEnvVariables(String readme) {
+        if (readme == null || readme.isBlank()) {
+            return List.of();
+        }
+
+        Set<String> vars = new LinkedHashSet<>();
+        Pattern tablePattern = Pattern.compile("\\|\\s*`([A-Z][A-Z0-9_]{2,})`\\s*\\|");
+        Matcher tableMatcher = tablePattern.matcher(readme);
+        while (tableMatcher.find()) {
+            vars.add(tableMatcher.group(1));
+        }
+
+        Pattern envLinePattern = Pattern.compile("(?m)^\\s*([A-Z][A-Z0-9_]{2,})\\s*=");
+        Matcher envLineMatcher = envLinePattern.matcher(readme);
+        while (envLineMatcher.find()) {
+            vars.add(envLineMatcher.group(1));
+        }
+
+        return vars.stream()
+                .filter(var -> !var.startsWith("MCP_"))
+                .toList();
+    }
+
+    private List<String> detectMissingEnv(List<String> requiredEnv) {
+        if (requiredEnv == null || requiredEnv.isEmpty()) {
+            return List.of();
+        }
+        List<String> missing = new ArrayList<>();
+        for (String env : requiredEnv) {
+            if (env == null || env.isBlank()) {
+                continue;
+            }
+            String value = System.getenv(env);
+            if (value == null || value.isBlank()) {
+                missing.add(env);
+            }
+        }
+        return List.copyOf(missing);
+    }
+
+    private Map<String, String> buildEnvPlaceholders(List<String> requiredEnv) {
+        if (requiredEnv == null || requiredEnv.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> env = new LinkedHashMap<>();
+        for (String item : requiredEnv) {
+            if (item == null || item.isBlank()) {
+                continue;
+            }
+            env.put(item, "${" + item + "}");
+        }
+        return env;
+    }
+
+    private List<String> normalizeInstallCommand(List<String> command) {
+        if (command == null || command.isEmpty()) {
+            return List.of();
+        }
+        String executable = command.get(0);
+        if (isWindows() && ("npm".equalsIgnoreCase(executable) || "pnpm".equalsIgnoreCase(executable) || "yarn".equalsIgnoreCase(executable))) {
+            return List.of("cmd", "/c", String.join(" ", command));
+        }
+        List<String> out = new ArrayList<>(command);
+        out.set(0, normalizeExecutable(out.get(0)));
+        return out;
+    }
+
+    private String normalizeExecutable(String executable) {
+        if (executable == null || executable.isBlank()) {
+            return executable;
+        }
+        if (!isWindows()) {
+            return executable;
+        }
+        if ("npm".equalsIgnoreCase(executable)) {
+            return "npm.cmd";
+        }
+        if ("pnpm".equalsIgnoreCase(executable)) {
+            return "pnpm.cmd";
+        }
+        if ("yarn".equalsIgnoreCase(executable)) {
+            return "yarn.cmd";
+        }
+        return executable;
+    }
+
+    private boolean isWindows() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        return os.contains("win");
+    }
+
+    private McpServerConfig sanitizeServerConfig(McpServerConfig input) {
+        if (input == null) {
+            return null;
+        }
+        McpAuthConfig auth = input.auth();
+        McpAuthConfig safeAuth = auth == null
+                ? new McpAuthConfig("none", null, null, null)
+                : new McpAuthConfig(
+                        auth.type() == null || auth.type().isBlank() ? "none" : auth.type(),
+                        auth.tokenEnv(),
+                        auth.token(),
+                        auth.headerName());
+
+        return new McpServerConfig(
+                input.name() == null ? "" : input.name(),
+                input.transport() == null ? "" : input.transport(),
+                input.url(),
+                input.command(),
+                input.workingDir(),
+                input.args(),
+                input.env(),
+                input.streaming() == null ? "none" : input.streaming(),
+                input.enabled(),
+                input.timeoutMs() <= 0 ? 12000 : input.timeoutMs(),
+                safeAuth);
+    }
+
+    private record CandidateCommand(String command, int score) {}
 
 }

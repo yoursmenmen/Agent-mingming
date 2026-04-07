@@ -31,7 +31,10 @@ public class McpOnboardingSkills implements LocalToolProvider {
 
         toolEventService.recordToolCall(toolContext, "mcp_onboarding_plan", args);
         try {
-            Map<String, Object> result = mcpOnboardingService.createPlan(repoUrl, serverName, preferredTransport);
+            Map<String, Object> plan = mcpOnboardingService.createPlan(repoUrl, serverName, preferredTransport);
+            Map<String, Object> result = new LinkedHashMap<>(plan);
+            result.put("ok", true);
+            result.put("status", "PLAN_READY");
             toolEventService.recordToolResult(toolContext, "mcp_onboarding_plan", result);
             return result;
         } catch (RuntimeException ex) {
@@ -65,31 +68,14 @@ public class McpOnboardingSkills implements LocalToolProvider {
 
         toolEventService.recordToolCall(toolContext, "mcp_onboarding_apply", args);
 
-        if (approved == null || !approved) {
-            Map<String, Object> waiting = Map.of(
-                    "ok", false,
-                    "status", "WAITING_USER_APPROVAL",
-                    "message", "apply requires explicit approval=true");
-            toolEventService.recordToolResult(toolContext, "mcp_onboarding_apply", waiting);
-            return waiting;
-        }
-
-        try {
-            Map<String, Object> result = mcpOnboardingService.applyPlan(
-                    repoUrl,
-                    serverName,
-                    preferredTransport,
-                    runInstall != null && runInstall);
-            toolEventService.recordToolResult(toolContext, "mcp_onboarding_apply", result);
-            return result;
-        } catch (RuntimeException ex) {
-            Map<String, Object> failure = Map.of(
-                    "ok", false,
-                    "error", ex.getMessage(),
-                    "status", "APPLY_FAILED");
-            toolEventService.recordToolResult(toolContext, "mcp_onboarding_apply", failure);
-            return failure;
-        }
+        Map<String, Object> waiting = Map.of(
+                "ok", true,
+                "status", "WAITING_USER_APPROVAL",
+                "message", "请在前端确认卡片中点击“接入（不安装）”或“接入并安装”执行。",
+                "approved", approved != null && approved,
+                "runInstall", runInstall != null && runInstall);
+        toolEventService.recordToolResult(toolContext, "mcp_onboarding_apply", waiting);
+        return waiting;
     }
 
     @Override

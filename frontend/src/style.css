@@ -1494,6 +1494,29 @@ h2 {
   gap: 8px;
 }
 
+.pending-action-item--stacked {
+  align-items: flex-start;
+}
+
+.onboarding-plan-banner {
+  border-color: rgba(217, 70, 128, 0.25);
+  border-left-color: rgba(219, 39, 119, 0.82);
+}
+
+.onboarding-plan-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: #6a3149;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.onboarding-plan-warn {
+  color: #9a3412;
+  font-weight: 600;
+}
+
 .timeline-meta {
   display: flex;
   justify-content: space-between;

@@ -137,7 +137,11 @@ function summarizeMcpToolsBoundPayload(payload: unknown): string | null {
   const firstInjected = injected.find(
     (item): item is { callbackName?: unknown } => Boolean(item && typeof item === 'object'),
   )
-  const firstCallbackName = typeof firstInjected?.callbackName === 'string' ? firstInjected.callbackName : 'N/A'
+  const firstCallbackName = typeof firstInjected?.callbackName === 'string' ? firstInjected.callbackName : '无'
+
+  if (mcpToolCount === 0) {
+    return `工具注入完成 | 本地: ${localToolCount} | MCP: 0 | 总计: ${totalToolCount} | 屏蔽: ${blockedCount} | 发现错误: ${discoveryErrorCount} | 首个MCP: 无`
+  }
 
   return `工具注入完成 | 本地: ${localToolCount} | MCP: ${mcpToolCount} | 总计: ${totalToolCount} | 屏蔽: ${blockedCount} | 发现错误: ${discoveryErrorCount} | 首个MCP: ${firstCallbackName}`
 }

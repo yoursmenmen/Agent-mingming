@@ -65,8 +65,8 @@ class Config:
     ssh_auth_mode: str = os.getenv("MCP_SSH_AUTH_MODE", "password").strip().lower()
     ssh_strict_host_key_checking: str = os.getenv("MCP_SSH_STRICT_HOST_KEY_CHECKING", "accept-new").strip()
     kubeconfig_path: str = os.getenv("MCP_KUBECONFIG", "/home/root_dlutcardiff/.kube").strip()
-    auth_mode: str = os.getenv("MCP_AUTH_MODE", "none").strip().lower()
-    auth_bearer_token: str = os.getenv("MCP_AUTH_BEARER_TOKEN", "").strip()
+    auth_mode: str = os.getenv("MCP_AUTH_MODE", "bearer").strip().lower()
+    auth_bearer_token: str = os.getenv("MCP_AUTH_BEARER_TOKEN", "local-mcp-token").strip()
     auth_api_key: str = os.getenv("MCP_AUTH_API_KEY", "").strip()
     auth_api_key_header: str = os.getenv("MCP_AUTH_API_KEY_HEADER", "x-api-key").strip()
 

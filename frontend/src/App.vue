@@ -32,6 +32,7 @@ const {
   isMcpRefreshing,
   mcpUpdatingServers,
   pendingMcpActions,
+  onboardingPlanCard,
   handlingActionIds,
   sendMessage,
   refreshRunEvents,
@@ -40,6 +41,8 @@ const {
   toggleMcpServer,
   confirmPendingMcpAction,
   rejectPendingMcpAction,
+  applyOnboardingPlanFromCard,
+  dismissOnboardingPlanCard,
   refreshRagStatus,
   triggerRagSyncNow,
   formatTime,
@@ -141,10 +144,13 @@ function openSidebarPanel(panel: InspectorPaneId) {
         :run-status="runStatus"
         :error-message="errorMessage"
         :pending-mcp-actions="pendingMcpActions"
+        :onboarding-plan-card="onboardingPlanCard"
         :handling-action-ids="handlingActionIds"
         :format-time="formatTime"
         @confirm-pending-action="confirmPendingMcpAction"
         @reject-pending-action="rejectPendingMcpAction"
+        @apply-onboarding-plan="applyOnboardingPlanFromCard"
+        @dismiss-onboarding-plan="dismissOnboardingPlanCard"
         @send="sendMessage"
       />
 

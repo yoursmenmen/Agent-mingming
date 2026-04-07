@@ -178,6 +178,42 @@ export async function rejectMcpAction(actionId: string): Promise<void> {
   }
 }
 
+export async function applyMcpOnboardingPlan(input: {
+  repoUrl: string
+  serverName: string
+  preferredTransport: string
+  runInstall: boolean
+}): Promise<{
+  ok: boolean
+  status: string
+  message?: string
+  restartRequired?: boolean
+  executedSteps?: Array<Record<string, unknown>>
+  plan?: Record<string, unknown>
+}> {
+  const response = await fetch('/api/mcp/onboarding/apply', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${DEV_TOKEN}`,
+    },
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok) {
+    throw new Error(`执行 MCP 接入失败：${response.status}`)
+  }
+
+  return response.json() as Promise<{
+    ok: boolean
+    status: string
+    message?: string
+    restartRequired?: boolean
+    executedSteps?: Array<Record<string, unknown>>
+    plan?: Record<string, unknown>
+  }>
+}
+
 export async function fetchRagSyncStatus(): Promise<RagSyncStatus> {
   const response = await fetch('/api/rag/sync/status', {
     headers: {

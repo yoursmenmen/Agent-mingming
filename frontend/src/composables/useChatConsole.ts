@@ -1,5 +1,6 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
+  applyMcpOnboardingPlan,
   confirmMcpAction,
   fetchMcpServers,
   fetchRagDocuments,
@@ -20,6 +21,7 @@ import { consumeSseStream } from '../services/sse'
 import type { ChatMessage, StreamErrorEvent, StreamMessageEvent, StreamRunEvent } from '../types/chat'
 import type {
   McpServerInfo,
+  OnboardingPlanCard,
   PendingMcpAction,
   RagDocuments,
   RagSourceInfo,
@@ -86,6 +88,7 @@ export function useChatConsole() {
   const runEventsPollingActive = ref(false)
   const handlingActionIds = ref<string[]>([])
   const localActionStates = ref<Record<string, 'PROCESSING' | 'CONFIRMED_EXECUTED' | 'CONFIRM_EXECUTION_FAILED' | 'REJECTED'>>({})
+  const onboardingPlanState = ref<Record<string, 'READY' | 'APPLYING' | 'DISMISSED' | 'APPLIED'>>({})
 
   const timelineItems = computed(() => mergeTimelineItems(streamItems.value, historyItems.value))
   const timelineCount = computed(() => timelineItems.value.length)
@@ -126,6 +129,26 @@ export function useChatConsole() {
       }
     }
     return [...actionsById.values()].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  })
+
+  const onboardingPlanCard = computed<OnboardingPlanCard | null>(() => {
+    const latestPlan = findLatestOnboardingPlanEvent(timelineItems.value)
+    if (!latestPlan) {
+      return null
+    }
+
+    const planState = onboardingPlanState.value[latestPlan.planId]
+    if (planState === 'DISMISSED' || planState === 'APPLIED') {
+      return null
+    }
+    if (hasLaterOnboardingApplyEvent(timelineItems.value, latestPlan.seq, latestPlan.repoUrl)) {
+      return null
+    }
+
+    return {
+      ...latestPlan,
+      state: planState ?? 'READY',
+    }
   })
   const statusLabel = computed(() => {
     switch (runStatus.value) {
@@ -550,6 +573,76 @@ export function useChatConsole() {
     await handleMcpAction(actionId, 'reject')
   }
 
+  async function applyOnboardingPlanFromCard(runInstall: boolean) {
+    const card = onboardingPlanCard.value
+    if (!card || onboardingPlanState.value[card.planId] === 'APPLYING') {
+      return
+    }
+
+    onboardingPlanState.value = {
+      ...onboardingPlanState.value,
+      [card.planId]: 'APPLYING',
+    }
+
+    try {
+      const result = await applyMcpOnboardingPlan({
+        repoUrl: card.repoUrl,
+        serverName: card.serverName,
+        preferredTransport: card.preferredTransport,
+        runInstall,
+      })
+
+      if (!result.ok) {
+        const message = result.message || `执行接入失败：${result.status}`
+        errorMessage.value = message
+        onboardingPlanState.value = {
+          ...onboardingPlanState.value,
+          [card.planId]: 'READY',
+        }
+        return
+      }
+
+      onboardingPlanState.value = {
+        ...onboardingPlanState.value,
+        [card.planId]: 'APPLIED',
+      }
+
+      messages.value.push({
+        id: createId('assistant-system'),
+        role: 'assistant',
+        content: [
+          `已完成 MCP 接入：${card.serverName}`,
+          `- repo: ${card.repoUrl}`,
+          `- transport: ${card.preferredTransport}`,
+          `- runInstall: ${runInstall ? 'true' : 'false'}`,
+          `- ${result.message ?? '请重启后端以生效。'}`,
+          '使用方式：请先刷新工具面板，然后在对话里让 Agent 调用该 MCP 工具。',
+        ].join('\n'),
+        createdAt: new Date().toISOString(),
+        status: 'done',
+      })
+
+      await Promise.all([refreshMcpServers(), refreshTools(), refreshRunEvents()])
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : '执行 MCP 接入失败'
+      onboardingPlanState.value = {
+        ...onboardingPlanState.value,
+        [card.planId]: 'READY',
+      }
+    }
+  }
+
+  function dismissOnboardingPlanCard() {
+    const card = onboardingPlanCard.value
+    if (!card) {
+      return
+    }
+    onboardingPlanState.value = {
+      ...onboardingPlanState.value,
+      [card.planId]: 'DISMISSED',
+    }
+  }
+
   async function triggerRagSyncNow() {
     if (isRagTriggering.value) {
       return
@@ -576,6 +669,101 @@ export function useChatConsole() {
     void refreshRunMetrics()
   })
 
+  function findLatestOnboardingPlanEvent(items: TimelineItem[]): (OnboardingPlanCard & { seq: number }) | null {
+    const sorted = [...items].sort((a, b) => b.seq - a.seq)
+    for (const item of sorted) {
+      if (item.type !== 'TOOL_RESULT') {
+        continue
+      }
+      const payload = parseToolResultPayload(item.rawPayload)
+      if (!payload || payload.tool !== 'mcp_onboarding_plan' || !payload.data) {
+        continue
+      }
+
+      const data = payload.data
+      const repoUrl = asString(data.repoUrl)
+      const planId = `${repoUrl}:${asString(data.serverName)}:${asString(data.cloneDir)}`
+      if (!repoUrl || !planId) {
+        continue
+      }
+
+      return {
+        planId,
+        repoUrl,
+        source: asString(data.source) || 'unknown',
+        owner: asString(data.owner),
+        repo: asString(data.repo),
+        serverName: asString(data.serverName),
+        preferredTransport: asString(data.preferredTransport) || 'stdio',
+        cloneDir: asString(data.cloneDir),
+        startupCommand: asString(data.startupCommand),
+        installCommands: asStringArray(data.installCommands),
+        requiredEnv: asStringArray(data.requiredEnv),
+        missingRequiredEnv: asStringArray(data.missingRequiredEnv),
+        warnings: asStringArray(data.warnings),
+        readyToApply: Boolean(data.readyToApply),
+        createdAt: item.createdAt,
+        state: 'READY',
+        seq: item.seq,
+      }
+    }
+    return null
+  }
+
+  function hasLaterOnboardingApplyEvent(items: TimelineItem[], seq: number, repoUrl: string): boolean {
+    if (!repoUrl) {
+      return false
+    }
+    for (const item of items) {
+      if (item.seq <= seq || item.type !== 'TOOL_RESULT') {
+        continue
+      }
+      const payload = parseToolResultPayload(item.rawPayload)
+      if (!payload || payload.tool !== 'mcp_onboarding_apply' || !payload.data) {
+        continue
+      }
+      const plan = payload.data.plan && typeof payload.data.plan === 'object' ? (payload.data.plan as Record<string, unknown>) : null
+      const matched = asString(plan?.repoUrl) === repoUrl || asString(payload.data.repoUrl) === repoUrl
+      if (!matched) {
+        continue
+      }
+      const status = asString(payload.data.status)
+      const ok = typeof payload.data.ok === 'boolean' ? payload.data.ok : false
+      if ((status === 'APPLIED' || status === 'SUCCESS') && ok) {
+        return true
+      }
+    }
+    return false
+  }
+
+  function parseToolResultPayload(rawPayload: string): { tool: string; data?: Record<string, unknown> } | null {
+    if (!rawPayload) {
+      return null
+    }
+    try {
+      const parsed = JSON.parse(rawPayload) as { tool?: unknown; data?: unknown }
+      if (!parsed || typeof parsed !== 'object') {
+        return null
+      }
+      const tool = typeof parsed.tool === 'string' ? parsed.tool : ''
+      const data = parsed.data && typeof parsed.data === 'object' ? (parsed.data as Record<string, unknown>) : undefined
+      return { tool, data }
+    } catch {
+      return null
+    }
+  }
+
+  function asString(value: unknown): string {
+    return typeof value === 'string' ? value : ''
+  }
+
+  function asStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return []
+    }
+    return value.filter((item): item is string => typeof item === 'string')
+  }
+
   onUnmounted(() => {
     stopRunEventsPolling()
   })
@@ -597,6 +785,7 @@ export function useChatConsole() {
     timelineItems,
     timelineCount,
     pendingMcpActions,
+    onboardingPlanCard,
     availableTools,
     mcpServers,
     ragSyncStatus,
@@ -619,6 +808,8 @@ export function useChatConsole() {
     toggleMcpServer,
     confirmPendingMcpAction,
     rejectPendingMcpAction,
+    applyOnboardingPlanFromCard,
+    dismissOnboardingPlanCard,
     refreshRagStatus,
     triggerRagSyncNow,
     formatTime,

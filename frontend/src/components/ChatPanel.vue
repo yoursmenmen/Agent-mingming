@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import StructuredCardHost from './structured/StructuredCardHost.vue'
 import type { ChatMessage } from '../types/chat'
-import type { PendingMcpAction, RunStatus } from '../types/run'
+import type { OnboardingPlanCard, PendingMcpAction, RunStatus } from '../types/run'
 import { renderMarkdown } from '../services/markdown'
 
 const props = defineProps<{
@@ -11,6 +11,7 @@ const props = defineProps<{
   runStatus: RunStatus
   errorMessage: string
   pendingMcpActions?: PendingMcpAction[]
+  onboardingPlanCard?: OnboardingPlanCard | null
   handlingActionIds?: string[]
   formatTime: (value: string) => string
 }>()
@@ -20,6 +21,8 @@ const emit = defineEmits<{
   'update:draft': [value: string]
   'confirm-pending-action': [actionId: string]
   'reject-pending-action': [actionId: string]
+  'apply-onboarding-plan': [runInstall: boolean]
+  'dismiss-onboarding-plan': []
 }>()
 
 const bottomAnchorRef = ref<HTMLElement | null>(null)
@@ -88,6 +91,7 @@ function toMessageHtml(message: ChatMessage): string {
 }
 
 const pendingActions = computed(() => props.pendingMcpActions ?? [])
+const onboardingPlanCard = computed(() => props.onboardingPlanCard ?? null)
 const handlingActionIds = computed(() => props.handlingActionIds ?? [])
 </script>
 
@@ -126,6 +130,53 @@ const handlingActionIds = computed(() => props.handlingActionIds ?? [])
     </div>
 
     <div class="chat-panel-footer">
+      <div v-if="onboardingPlanCard" class="pending-actions-banner onboarding-plan-banner">
+        <p><strong>MCP 接入计划已生成</strong></p>
+        <ul>
+          <li class="pending-action-item pending-action-item--stacked">
+            <div class="onboarding-plan-lines">
+              <span>仓库：{{ onboardingPlanCard.repoUrl }}</span>
+              <span>服务名：{{ onboardingPlanCard.serverName }} | 传输：{{ onboardingPlanCard.preferredTransport }}</span>
+              <span>启动命令：{{ onboardingPlanCard.startupCommand || '未识别' }}</span>
+              <span>安装命令数：{{ onboardingPlanCard.installCommands.length }}</span>
+              <span v-if="onboardingPlanCard.requiredEnv.length">
+                必填环境变量：{{ onboardingPlanCard.requiredEnv.join(', ') }}
+              </span>
+              <span v-if="onboardingPlanCard.missingRequiredEnv.length" class="onboarding-plan-warn">
+                缺失环境变量：{{ onboardingPlanCard.missingRequiredEnv.join(', ') }}
+              </span>
+              <span v-if="onboardingPlanCard.warnings.length">提示：{{ onboardingPlanCard.warnings.join('；') }}</span>
+            </div>
+            <div class="pending-action-controls">
+              <button
+                class="ghost-button"
+                type="button"
+                :disabled="onboardingPlanCard.state === 'APPLYING'"
+                @click="emit('apply-onboarding-plan', false)"
+              >
+                {{ onboardingPlanCard.state === 'APPLYING' ? '执行中…' : '接入（不安装）' }}
+              </button>
+              <button
+                class="ghost-button"
+                type="button"
+                :disabled="onboardingPlanCard.state === 'APPLYING'"
+                @click="emit('apply-onboarding-plan', true)"
+              >
+                接入并安装
+              </button>
+              <button
+                class="ghost-button ghost-button--danger"
+                type="button"
+                :disabled="onboardingPlanCard.state === 'APPLYING'"
+                @click="emit('dismiss-onboarding-plan')"
+              >
+                拒绝
+              </button>
+            </div>
+          </li>
+        </ul>
+      </div>
+
       <div v-if="pendingActions.length" class="pending-actions-banner">
         <p><strong>命令待你确认</strong>（未执行）</p>
         <ul>

@@ -1,20 +1,27 @@
-# MCP servers configuration
-#
-# To use local python MCP server:
-# 1) python tools/mcp/local_ops_mcp.py
-# 2) set enabled=true below
 servers:
-  - name: local-ops
-    transport: http
-    url: http://127.0.0.1:9100
-    # stdio 示例：
-    # transport: stdio
-    # command: python
-    # args:
-    #   - tools/mcp/local_ops_mcp.py
-    streaming: none
-    enabled: true
-    timeoutMs: 12000
-    auth:
-      type: bearer
-      tokenEnv: MCP_LOCAL_OPS_BEARER_TOKEN
+ -
+  name: local-ops
+  transport: http
+  url: http://127.0.0.1:9100
+  streaming: none
+  enabled: true
+  timeoutMs: 12000
+  auth:
+    type: bearer
+    tokenEnv: MCP_LOCAL_OPS_BEARER_TOKEN
+# -
+#  name: insta-mcp
+#  transport: stdio
+#  command: node
+#  workingDir: C:\DevApp\MyResp\MyJavaProject\Agent_mm\.mcp-onboarding\arjun1194-insta-mcp
+#  args:
+#   - C:\DevApp\MyResp\MyJavaProject\Agent_mm\.mcp-onboarding\arjun1194-insta-mcp\dist\index.js
+#  env:
+#    INSTAGRAM_USERNAME: "${INSTAGRAM_USERNAME}"
+#    INSTAGRAM_PASSWORD: "${INSTAGRAM_PASSWORD}"
+#    INSTA_DATA_DIR: "${INSTA_DATA_DIR}"
+#  streaming: none
+#  enabled: true
+#  timeoutMs: 60000
+#  auth:
+#    type: none

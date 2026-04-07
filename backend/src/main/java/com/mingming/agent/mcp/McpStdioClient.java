@@ -9,13 +9,18 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -24,6 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -31,8 +37,11 @@ import org.springframework.stereotype.Component;
 public class McpStdioClient {
 
     private static final Logger log = LoggerFactory.getLogger(McpStdioClient.class);
+    private static final Pattern ENV_PLACEHOLDER_PATTERN = Pattern.compile("^\\$\\{([A-Za-z_][A-Za-z0-9_]*)}$");
+    private static final int STDERR_TAIL_LIMIT = 12;
 
     private final ObjectMapper objectMapper;
+    private final Environment environment;
     private final Map<String, StdioSession> sessions = new ConcurrentHashMap<>();
 
     public Map<String, Object> postJson(McpServerConfig server, Map<String, Object> payload) {
@@ -134,6 +143,8 @@ public class McpStdioClient {
         private final BufferedReader stdout;
         private final BufferedReader stderr;
         private final Map<String, CompletableFuture<Map<String, Object>>> pending = new ConcurrentHashMap<>();
+        private final Deque<String> stderrTail = new ArrayDeque<>();
+        private volatile String firstMeaningfulStderr = "";
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private final Object writeLock = new Object();
 
@@ -145,9 +156,17 @@ public class McpStdioClient {
                 if (spec.workingDir() != null && !spec.workingDir().isBlank()) {
                     builder.directory(new java.io.File(spec.workingDir()));
                 }
-                if (!spec.env().isEmpty()) {
-                    builder.environment().putAll(spec.env());
+                Map<String, String> resolvedEnv = resolveProcessEnv(sessionKey, spec.env());
+                if (!resolvedEnv.isEmpty()) {
+                    builder.environment().putAll(resolvedEnv);
                 }
+                log.info(
+                        "MCP stdio preparing process: server={}, command={}, argsCount={}, workingDir={}, envKeys={}",
+                        sessionKey,
+                        spec.command(),
+                        spec.args().size(),
+                        spec.workingDir(),
+                        resolvedEnv.keySet());
                 this.process = builder.start();
                 this.writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
                 this.stdout = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
@@ -192,10 +211,22 @@ public class McpStdioClient {
                 return response;
             } catch (TimeoutException ex) {
                 pending.remove(requestId);
-                throw new IllegalStateException("stdio mcp call timeout: " + timeoutMs + "ms", ex);
+                String stderrSnapshot = recentStderr();
+                String firstError = firstMeaningfulError();
+                throw new IllegalStateException(
+                        "stdio mcp call timeout: " + timeoutMs + "ms"
+                                + (firstError.isBlank() ? "" : " | firstError: " + firstError)
+                                + (stderrSnapshot.isBlank() ? "" : " | stderr: " + stderrSnapshot),
+                        ex);
             } catch (Exception ex) {
                 pending.remove(requestId);
-                throw new IllegalStateException("stdio mcp call failed: " + ex.getMessage(), ex);
+                String stderrSnapshot = recentStderr();
+                String firstError = firstMeaningfulError();
+                throw new IllegalStateException(
+                        "stdio mcp call failed: " + ex.getMessage()
+                                + (firstError.isBlank() ? "" : " | firstError: " + firstError)
+                                + (stderrSnapshot.isBlank() ? "" : " | stderr: " + stderrSnapshot),
+                        ex);
             }
         }
 
@@ -244,7 +275,9 @@ public class McpStdioClient {
                 while (!closed.get() && (line = stderr.readLine()) != null) {
                     String trimmed = line.trim();
                     if (!trimmed.isBlank()) {
-                        log.debug("MCP stdio stderr: server={}, message={}", sessionKey, trimmed);
+                        appendStderr(trimmed);
+                        captureFirstMeaningfulStderr(trimmed);
+                        log.info("MCP stdio stderr: server={}, message={}", sessionKey, trimmed);
                     }
                 }
             } catch (Exception ignored) {
@@ -285,7 +318,59 @@ public class McpStdioClient {
                 process.destroyForcibly();
             }
             sessions.remove(sessionKey, this);
-            log.info("MCP stdio session closed: server={}, reason={}", sessionKey, safe(reason));
+            Integer exitCode = null;
+            if (!process.isAlive()) {
+                try {
+                    exitCode = process.exitValue();
+                } catch (Exception ignored) {
+                    // no-op
+                }
+            }
+            String stderrSnapshot = recentStderr();
+            String firstError = firstMeaningfulError();
+            log.warn(
+                    "MCP stdio session closed: server={}, reason={}, exitCode={}, firstError={}, stderrTail={}",
+                    sessionKey,
+                    safe(reason),
+                    exitCode,
+                    firstError.isBlank() ? "<empty>" : firstError,
+                    stderrSnapshot.isBlank() ? "<empty>" : stderrSnapshot);
+        }
+
+        private void appendStderr(String line) {
+            synchronized (stderrTail) {
+                if (stderrTail.size() >= STDERR_TAIL_LIMIT) {
+                    stderrTail.removeFirst();
+                }
+                stderrTail.addLast(line);
+            }
+        }
+
+        private void captureFirstMeaningfulStderr(String line) {
+            if (line == null || line.isBlank() || !firstMeaningfulStderr.isBlank()) {
+                return;
+            }
+            String normalized = line.trim();
+            if (normalized.startsWith("at ")
+                    || normalized.startsWith("npm ERR!")
+                    || normalized.startsWith("[dotenv@")
+                    || normalized.startsWith("Initializing ")) {
+                return;
+            }
+            firstMeaningfulStderr = normalized;
+        }
+
+        private String firstMeaningfulError() {
+            return firstMeaningfulStderr == null ? "" : firstMeaningfulStderr;
+        }
+
+        private String recentStderr() {
+            synchronized (stderrTail) {
+                if (stderrTail.isEmpty()) {
+                    return "";
+                }
+                return String.join(" | ", stderrTail);
+            }
         }
 
         private String sanitizeThreadName(String value) {
@@ -296,9 +381,72 @@ public class McpStdioClient {
 
     private List<String> buildCommand(SessionSpec spec) {
         List<String> command = new ArrayList<>();
-        command.add(spec.command());
+        command.add(normalizeExecutable(spec.command()));
         command.addAll(spec.args());
         return command;
+    }
+
+    private String normalizeExecutable(String executable) {
+        if (executable == null || executable.isBlank()) {
+            return executable;
+        }
+        if (!isWindows()) {
+            return executable;
+        }
+        String lower = executable.toLowerCase(Locale.ROOT);
+        if ("npm".equals(lower)) {
+            return "npm.cmd";
+        }
+        if ("pnpm".equals(lower)) {
+            return "pnpm.cmd";
+        }
+        if ("yarn".equals(lower)) {
+            return "yarn.cmd";
+        }
+        return executable;
+    }
+
+    private boolean isWindows() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        return os.contains("win");
+    }
+
+    private Map<String, String> resolveProcessEnv(String serverName, Map<String, String> configuredEnv) {
+        if (configuredEnv == null || configuredEnv.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : configuredEnv.entrySet()) {
+            String key = entry.getKey();
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            String value = entry.getValue();
+            if (value == null) {
+                continue;
+            }
+
+            Matcher matcher = ENV_PLACEHOLDER_PATTERN.matcher(value.trim());
+            if (matcher.matches()) {
+                String envName = matcher.group(1);
+                String hostValue = System.getenv(envName);
+                String resolvedFrom = "system";
+                if (hostValue == null || hostValue.isBlank()) {
+                    hostValue = environment.getProperty(envName);
+                    resolvedFrom = "spring";
+                }
+                if (hostValue != null && !hostValue.isBlank()) {
+                    out.put(key, hostValue);
+                    log.info("MCP stdio env resolved: server={}, key={}, source={}", serverName, key, resolvedFrom);
+                } else {
+                    log.warn("MCP stdio env missing: server={}, key={}, placeholder={}", serverName, key, envName);
+                }
+                continue;
+            }
+
+            out.put(key, value);
+        }
+        return out;
     }
 
     private record SessionSpec(String command, String workingDir, List<String> args, Map<String, String> env) {

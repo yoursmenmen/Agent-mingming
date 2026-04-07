@@ -33,6 +33,25 @@ export interface PendingMcpAction {
   state: 'PENDING_CONFIRMATION' | 'PROCESSING'
 }
 
+export interface OnboardingPlanCard {
+  planId: string
+  repoUrl: string
+  source: string
+  owner: string
+  repo: string
+  serverName: string
+  preferredTransport: string
+  cloneDir: string
+  startupCommand: string
+  installCommands: string[]
+  requiredEnv: string[]
+  missingRequiredEnv: string[]
+  warnings: string[]
+  readyToApply: boolean
+  createdAt: string
+  state: 'READY' | 'APPLYING' | 'DISMISSED' | 'APPLIED'
+}
+
 export type RunStatus = 'idle' | 'streaming' | 'done' | 'error'
 
 export interface ToolInfo {
