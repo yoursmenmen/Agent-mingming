@@ -17,6 +17,14 @@
 - 持久化核心事件：`USER_MESSAGE`、`MODEL_MESSAGE`、`TOOL_CALL`、`TOOL_RESULT`、`RETRIEVAL_RESULT`、`RAG_SYNC`、`ERROR`。
 - 历史查询支持 run 维度与 session 维度：`/api/runs/{runId}/events`、`/api/sessions/{sessionId}/events`。
 
+### 项目亮点（可直接讲）
+
+- **可注入时钟（Clock Injection）**：在 loop 执行器里没有把时间写死为 `System.currentTimeMillis()`，而是注入 `nowMsSupplier (LongSupplier)`。
+- **生产与测试双模式**：生产默认走系统时间；测试可注入“固定时钟/递增时钟”，从而稳定复现超时、轮次和终止策略相关场景。
+- **工程收益**：显著降低时间相关测试抖动（flaky test），让 loop 策略（如超时与终止条件）可预测、可验证、可回归。
+- **函数式回调解耦（FunctionalInterface）**：`AgentRunLoopService` 内部定义 `LoopTurnExecutor` 与 `LoopEventListener` 两个函数式接口，允许直接用 lambda 传入“每轮执行逻辑”和“事件上报逻辑”，把 loop 引擎与业务编排解耦。
+- **事件桥接清晰**：loop 内部通过 `onEvent(eventType, turnIndex, elapsedMs, payload)` 上报生命周期事件，外层编排器统一转换为 run_event 落库（如 `LOOP_TURN_STARTED/FINISHED/TERMINATED`），便于回放与诊断。
+
 ### 可优化点
 
 - 增加 trace 过滤与分页（按 event type、时间区间、session）。

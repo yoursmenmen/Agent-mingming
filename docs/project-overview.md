@@ -37,6 +37,7 @@ Agent_mm/
 - 天气结构化输出：天气问答在最终消息 payload 中带 `structured.weather.v1`。
 - 单 run 显式 loop：后端已引入 `AgentRunLoopService`，当前以 `maxRounds=1` 执行单 run 内显式 turn loop。
 - loop 事件可观测（阶段性）：run trace 已扩展 `LOOP_TURN_STARTED` / `LOOP_TURN_FINISHED` / `LOOP_TERMINATED` 事件类型；主入口 loop 事件持久化/回放接入仍在后续计划中。
+- 可测试时钟注入：`DefaultAgentRunLoopService` 使用 `nowMsSupplier`（`LongSupplier`）而不是写死 `System.currentTimeMillis()`；生产默认取系统时间，测试可注入固定/递增时钟，避免时间相关测试抖动。
 
 ### 已完成（前端体验）
 - 侧栏拆分为：`状态` / `时间线` / `工具` 三面板。
