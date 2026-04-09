@@ -14,7 +14,8 @@
 
 - 入口接口：`POST /api/chat/stream`，通过 SSE 推送 `run` 和 `event`。
 - 每次请求创建 `runId`，可复用 `sessionId` 进行多轮对话。
-- 持久化核心事件：`USER_MESSAGE`、`MODEL_MESSAGE`、`TOOL_CALL`、`TOOL_RESULT`、`RETRIEVAL_RESULT`、`RAG_SYNC`、`ERROR`。
+- full agent loop 已接入主链路：`LoopTerminationPolicy(8, 45_000ms, 2)`，即最多 8 轮、45 秒总时长、连续 2 次工具失败即终止。
+- 持久化核心事件：`USER_MESSAGE`、`MODEL_MESSAGE`、`TOOL_CALL`、`TOOL_RESULT`、`RETRIEVAL_RESULT`、`RAG_SYNC`、`LOOP_TURN_STARTED`、`LOOP_TURN_FINISHED`、`LOOP_TERMINATED`、`ERROR`。
 - 历史查询支持 run 维度与 session 维度：`/api/runs/{runId}/events`、`/api/sessions/{sessionId}/events`。
 
 ### 项目亮点（可直接讲）
@@ -24,6 +25,25 @@
 - **工程收益**：显著降低时间相关测试抖动（flaky test），让 loop 策略（如超时与终止条件）可预测、可验证、可回归。
 - **函数式回调解耦（FunctionalInterface）**：`AgentRunLoopService` 内部定义 `LoopTurnExecutor` 与 `LoopEventListener` 两个函数式接口，允许直接用 lambda 传入“每轮执行逻辑”和“事件上报逻辑”，把 loop 引擎与业务编排解耦。
 - **事件桥接清晰**：loop 内部通过 `onEvent(eventType, turnIndex, elapsedMs, payload)` 上报生命周期事件，外层编排器统一转换为 run_event 落库（如 `LOOP_TURN_STARTED/FINISHED/TERMINATED`），便于回放与诊断。
+
+### turn 执行抽象（本轮新增重点）
+
+- `TurnExecutionService` 负责“单轮执行”的统一入口，输入 `TurnContext`，输出 `LoopStepResult`。
+- `LoopStepResult` 把 loop 决策需要的最小语义收敛为固定字段：
+  - `finalAnswerReady`：当前轮是否已有可结束答案
+  - `toolFailure`：本轮是否判定工具失败
+  - `toolCallCount`：本轮工具调用次数
+  - `assistantContent`：本轮 assistant 文本
+  - `meta`：可扩展元数据
+- 这样做的价值：loop 控制层与“具体模型/工具编排实现”解耦，后续扩展多策略 turn executor 时不会破坏上层 loop 契约。
+
+### 前后端 loop 契约（turnIndex / elapsedMs / reason）
+
+- 三个 loop 事件统一字段：
+  - `turnIndex`：轮次，`LOOP_TURN_STARTED/FINISHED` 必须 `>=1`，`LOOP_TERMINATED` 允许 `>=0`
+  - `elapsedMs`：从 loop 启动到当前事件的累计耗时，必须 `>=0`
+  - `reason`：仅 `LOOP_TERMINATED` 必填，典型值 `FINAL_ANSWER` / `MAX_ROUNDS` / `TIMEOUT` / `CONSECUTIVE_TOOL_FAILURES`
+- 后端通过事件契约组件做 normalize + validate，前端时间线与状态面板按同一字段聚合展示，避免“后端一套、前端一套”的语义漂移。
 
 ### 可优化点
 

@@ -198,7 +198,7 @@ describe('mapRunEventToTimelineItem', () => {
     expect(item.summary).toContain('耗时: 1280ms')
   })
 
-  it('builds loop terminated summary with reason', () => {
+  it('builds loop terminated summary with reason and elapsedMs', () => {
     const item = mapRunEventToTimelineItem({
       id: 'evt-loop-3',
       runId: 'run-1',
@@ -207,12 +207,14 @@ describe('mapRunEventToTimelineItem', () => {
       type: 'LOOP_TERMINATED',
       payload: JSON.stringify({
         turnIndex: 3,
+        elapsedMs: 2560,
         reason: 'MAX_TURNS_REACHED',
       }),
     })
 
     expect(item.summary).toContain('循环终止')
     expect(item.summary).toContain('第 3 轮')
+    expect(item.summary).toContain('耗时: 2560ms')
     expect(item.summary).toContain('原因: MAX_TURNS_REACHED')
   })
 })

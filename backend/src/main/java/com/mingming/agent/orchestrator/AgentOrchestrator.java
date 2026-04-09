@@ -11,8 +11,9 @@ import com.mingming.agent.event.contract.EventContractRegistry;
 import com.mingming.agent.mcp.McpRuntimeToolCallbackFactory;
 import com.mingming.agent.orchestrator.loop.AgentRunLoopService;
 import com.mingming.agent.orchestrator.loop.LoopExecutionReport;
-import com.mingming.agent.orchestrator.loop.LoopStepResult;
 import com.mingming.agent.orchestrator.loop.LoopTerminationPolicy;
+import com.mingming.agent.orchestrator.turn.TurnContext;
+import com.mingming.agent.orchestrator.turn.TurnExecutionService;
 import com.mingming.agent.rag.DocsChunk;
 import com.mingming.agent.rag.DocsChunkingService;
 import com.mingming.agent.rag.HybridRetrievalService;
@@ -33,6 +34,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,6 +79,7 @@ public class AgentOrchestrator {
     private EventContractRegistry eventContractRegistry;
 
     private final AgentRunLoopService agentRunLoopService;
+    private final TurnExecutionService turnExecutionService;
 
     public record RunInit(UUID sessionId, UUID runId) {}
 
@@ -114,15 +117,42 @@ public class AgentOrchestrator {
     public void executeSingleTurn(
             UUID runId, UUID sessionId, String userText, java.util.function.Consumer<String> sseDataConsumer) {
         AtomicInteger seq = new AtomicInteger(1);
-        LoopTerminationPolicy policy = new LoopTerminationPolicy(1, null, null);
+        LoopTerminationPolicy policy = new LoopTerminationPolicy(8, 45_000L, 2);
         executeLoop(
                 runId,
                 seq,
                 policy,
-                turnIndex -> {
-                    runOnce(runId, sessionId, userText, sseDataConsumer, seq);
-                    return new LoopStepResult(true, false);
-                });
+                turnIndex -> executeTurnWithFallback(
+                        runId, sessionId, userText, turnIndex, seq, sseDataConsumer));
+    }
+
+    private com.mingming.agent.orchestrator.loop.LoopStepResult executeTurnWithFallback(
+            UUID runId,
+            UUID sessionId,
+            String userText,
+            int turnIndex,
+            AtomicInteger seq,
+            Consumer<String> sseDataConsumer) {
+        com.mingming.agent.orchestrator.loop.LoopStepResult turnResult = turnExecutionService.executeTurn(new TurnContext(
+                runId.toString(), sessionId.toString(), userText, turnIndex, seq, sseDataConsumer));
+        if (hasFinalAssistantOutput(turnResult)) {
+            return turnResult;
+        }
+
+        log.warn(
+                "TurnExecutionService produced no final assistant output, fallback to runOnce. runId={}, turnIndex={}",
+                runId,
+                turnIndex);
+        runOnce(runId, sessionId, userText, sseDataConsumer, seq);
+        return new com.mingming.agent.orchestrator.loop.LoopStepResult(true, false, 0, "fallback:runOnce", Map.of());
+    }
+
+    private boolean hasFinalAssistantOutput(com.mingming.agent.orchestrator.loop.LoopStepResult turnResult) {
+        if (turnResult == null || !turnResult.finalAnswerReady()) {
+            return false;
+        }
+        String assistantContent = turnResult.assistantContent();
+        return assistantContent != null && !assistantContent.isBlank();
     }
 
     public void appendEvent(UUID runId, int seq, String type, ObjectNode payload) {

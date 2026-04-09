@@ -13,6 +13,30 @@ import org.junit.jupiter.api.Test;
 class DefaultAgentRunLoopServiceTest {
 
     @Test
+    void loopStepResult_shouldExposeExtendedTurnLevelMetadata() {
+        Map<String, Object> meta = Map.of("phase", "tool");
+
+        LoopStepResult result = new LoopStepResult(false, true, 2, "assistant payload", meta);
+
+        assertThat(result.finalAnswerReady()).isFalse();
+        assertThat(result.toolFailure()).isTrue();
+        assertThat(result.toolCallCount()).isEqualTo(2);
+        assertThat(result.assistantContent()).isEqualTo("assistant payload");
+        assertThat(result.meta()).isEqualTo(meta);
+    }
+
+    @Test
+    void loopStepResult_compatibilityConstructor_shouldSetDefaultExtendedFields() {
+        LoopStepResult result = new LoopStepResult(true, false);
+
+        assertThat(result.finalAnswerReady()).isTrue();
+        assertThat(result.toolFailure()).isFalse();
+        assertThat(result.toolCallCount()).isEqualTo(0);
+        assertThat(result.assistantContent()).isNull();
+        assertThat(result.meta()).isEmpty();
+    }
+
+    @Test
     void execute_shouldTerminateAtMaxRoundsAndRecordTerminatedEvent() {
         LongSupplier nowMs = increasingClock(1_000L, 10L);
         AgentRunLoopService loopService = new DefaultAgentRunLoopService(nowMs);

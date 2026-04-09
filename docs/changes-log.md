@@ -373,3 +373,35 @@ Flyway migrations：
 ### 阶段结论
 - “单 run 显式 loop” 已完成执行骨架与前端聚合接入；loop 事件持久化/回放主链路接入为后续事项。
 - 下一阶段将从“单 run 内 1 轮”扩展到“跨 run 的连续 loop 协调与状态衔接”。
+
+## 16) 2026-04-08 迭代（full agent loop 落地 + turn 执行契约收敛）
+
+### 后端：full agent loop 策略生效（8 / 45s / 2）
+- `AgentOrchestrator.executeSingleTurn(...)` 已切换为完整 loop 策略：
+  - `maxRounds = 8`
+  - `maxDurationMs = 45_000`
+  - `maxConsecutiveToolFailures = 2`
+- loop 由 `AgentRunLoopService` 执行，事件监听器通过 `appendEvent(...)` 写入 run trace，形成“started -> finished -> terminated”完整闭环。
+
+### 后端：TurnExecutionService + LoopStepResult 主链路化
+- 新增 `TurnExecutionService` 抽象，`AgentOrchestrator` 每轮通过 `executeTurn(TurnContext)` 执行 turn。
+- 新增 `LoopStepResult` 统一返回契约，核心字段：
+  - `finalAnswerReady`
+  - `toolFailure`
+  - `toolCallCount`
+  - `assistantContent`
+  - `meta`
+- 默认实现 `DefaultTurnExecutionService` 已接入主流程；当出现“无最终可用 assistantContent”时，编排器按既有兜底策略回退 `runOnce`，保证兼容。
+
+### 前后端事件契约：turnIndex / elapsedMs / reason
+- loop 生命周期事件 payload 统一包含：
+  - `turnIndex`：当前轮次序号（`LOOP_TURN_STARTED/FINISHED >= 1`，`LOOP_TERMINATED >= 0`）
+  - `elapsedMs`：从 loop 启动到当前事件的累计耗时（`>= 0`）
+  - `reason`：仅 `LOOP_TERMINATED` 必填（如 `FINAL_ANSWER` / `MAX_ROUNDS` / `TIMEOUT` / `CONSECUTIVE_TOOL_FAILURES`）
+- 后端通过 `LoopTurnStartedEventContract` / `LoopTurnFinishedEventContract` / `LoopTerminatedEventContract` 做 normalize + validate；前端 `eventMapper` 与 `useChatConsole` 已按该契约聚合显示 loop 状态。
+
+### 验证与回归
+- 新增/更新测试覆盖：
+  - `AgentOrchestratorTest`：校验 full loop policy（8/45s/2）与 turn 委托
+  - `TurnExecutionServiceContractTest`、`DefaultTurnExecutionServiceTest`：校验 turn 执行返回契约
+  - 前端 loop mapper/聚合测试：校验 `turnIndex/elapsedMs/reason` 的展示与聚合语义

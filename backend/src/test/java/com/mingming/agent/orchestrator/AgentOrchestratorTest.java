@@ -17,6 +17,8 @@ import com.mingming.agent.orchestrator.loop.DefaultAgentRunLoopService;
 import com.mingming.agent.orchestrator.loop.LoopExecutionReport;
 import com.mingming.agent.orchestrator.loop.LoopState;
 import com.mingming.agent.orchestrator.loop.LoopTerminationReason;
+import com.mingming.agent.orchestrator.turn.TurnContext;
+import com.mingming.agent.orchestrator.turn.TurnExecutionService;
 import com.mingming.agent.rag.Bm25RetrieverService;
 import com.mingming.agent.rag.DocsChunk;
 import com.mingming.agent.rag.DocsChunkingService;
@@ -72,6 +74,9 @@ class AgentOrchestratorTest {
     @Mock
     private AgentRunLoopService agentRunLoopService;
 
+    @Mock
+    private TurnExecutionService turnExecutionService;
+
     private final VectorRagProperties vectorRagProperties = new VectorRagProperties();
 
     AgentOrchestratorTest() {
@@ -114,6 +119,64 @@ class AgentOrchestratorTest {
         assertThat(mapper.readTree(savedEvents.get(0).getPayload()).path("maxTurns").asInt()).isEqualTo(1);
         assertThat(mapper.readTree(savedEvents.get(1).getPayload()).path("elapsedMs").asLong()).isEqualTo(18L);
         assertThat(mapper.readTree(savedEvents.get(2).getPayload()).path("reason").asText()).isEqualTo("FINAL_ANSWER");
+    }
+
+    @Test
+    void executeSingleTurn_shouldUseFullLoopPolicyAndDelegateToTurnExecutionService() {
+        UUID runId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        when(turnExecutionService.executeTurn(any(TurnContext.class)))
+                .thenReturn(new com.mingming.agent.orchestrator.loop.LoopStepResult(true, false, 0, "done", Map.of()));
+        when(agentRunLoopService.execute(any(), any(), any())).thenAnswer(invocation -> {
+            com.mingming.agent.orchestrator.loop.LoopTerminationPolicy policy = invocation.getArgument(0);
+            AgentRunLoopService.LoopTurnExecutor turnExecutor = invocation.getArgument(1);
+            assertThat(policy.maxRounds()).isEqualTo(8);
+            assertThat(policy.maxDurationMs()).isEqualTo(45_000L);
+            assertThat(policy.maxConsecutiveToolFailures()).isEqualTo(2);
+            turnExecutor.execute(3);
+            return new LoopExecutionReport(new LoopState(0L, 1, 0, true), Optional.of(LoopTerminationReason.FINAL_ANSWER));
+        });
+
+        AgentOrchestrator orchestrator = createOrchestrator();
+        orchestrator.executeSingleTurn(runId, sessionId, "hello", payload -> {});
+
+        ArgumentCaptor<TurnContext> turnContextCaptor = ArgumentCaptor.forClass(TurnContext.class);
+        verify(turnExecutionService).executeTurn(turnContextCaptor.capture());
+        TurnContext context = turnContextCaptor.getValue();
+        assertThat(context.runId()).isEqualTo(runId.toString());
+        assertThat(context.sessionId()).isEqualTo(sessionId.toString());
+        assertThat(context.userText()).isEqualTo("hello");
+        assertThat(context.turnIndex()).isEqualTo(3);
+        assertThat(context.seq().get()).isEqualTo(1);
+    }
+
+    @Test
+    void executeSingleTurn_shouldFallbackToRunOnceWhenTurnExecutionHasNoFinalAnswer() {
+        UUID runId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        when(turnExecutionService.executeTurn(any(TurnContext.class)))
+                .thenReturn(new com.mingming.agent.orchestrator.loop.LoopStepResult(false, false, 0, "", Map.of()));
+        when(agentRunLoopService.execute(any(), any(), any())).thenAnswer(invocation -> {
+            AgentRunLoopService.LoopTurnExecutor turnExecutor = invocation.getArgument(1);
+            turnExecutor.execute(1);
+            return new LoopExecutionReport(new LoopState(0L, 1, 0, true), Optional.of(LoopTerminationReason.FINAL_ANSWER));
+        });
+        when(chatModelProvider.getIfAvailable()).thenReturn(null);
+        when(docsChunkingService.loadChunks(any())).thenReturn(List.of());
+        when(hybridRetrievalService.searchWithObservability(eq("fallback test"), eq(List.<DocsChunk>of()), eq(3), eq(0.0D), eq(3), eq(0.0D), eq(3)))
+                .thenReturn(new HybridRetrievalService.RetrievalResult("hybrid", 0, 0, 0, List.of()));
+        when(runEventRepository.findRecentConversationEvents(sessionId, 40)).thenReturn(List.of());
+        when(runEventRepository.findByRunIdOrderBySeqAsc(runId)).thenReturn(List.of());
+
+        AgentOrchestrator orchestrator = createOrchestrator();
+        List<String> ssePayloads = new ArrayList<>();
+
+        orchestrator.executeSingleTurn(runId, sessionId, "fallback test", ssePayloads::add);
+
+        ArgumentCaptor<RunEventEntity> captor = ArgumentCaptor.forClass(RunEventEntity.class);
+        verify(runEventRepository, org.mockito.Mockito.atLeast(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(RunEventEntity::getType).contains("USER_MESSAGE", "MODEL_MESSAGE");
+        assertThat(ssePayloads).isNotEmpty();
     }
 
     @Test
@@ -449,6 +512,7 @@ class AgentOrchestratorTest {
                 hybridRetrievalService,
                 retrievalEventService,
                 mcpRuntimeToolCallbackFactory,
-                agentRunLoopService);
+                agentRunLoopService,
+                turnExecutionService);
     }
 }

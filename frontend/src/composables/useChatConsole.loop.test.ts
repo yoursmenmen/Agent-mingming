@@ -20,13 +20,13 @@ describe('aggregateLoopStatusFromTimeline', () => {
       buildTimelineItem(1, 'LOOP_TURN_STARTED', { turnIndex: 1, maxTurns: 5 }),
       buildTimelineItem(2, 'LOOP_TURN_FINISHED', { turnIndex: 1, elapsedMs: 420 }),
       buildTimelineItem(3, 'LOOP_TURN_STARTED', { turnIndex: 2, maxTurns: 5 }),
-      buildTimelineItem(4, 'LOOP_TERMINATED', { turnIndex: 2, reason: 'MAX_TURNS_REACHED' }),
+      buildTimelineItem(4, 'LOOP_TERMINATED', { turnIndex: 2, elapsedMs: 840, reason: 'MAX_TURNS_REACHED' }),
     ])
 
     expect(status).not.toBeNull()
     expect(status?.currentTurn).toBe(2)
     expect(status?.maxTurns).toBe(5)
-    expect(status?.elapsedMs).toBe(420)
+    expect(status?.elapsedMs).toBe(840)
     expect(status?.terminationReason).toBe('MAX_TURNS_REACHED')
     expect(status?.active).toBe(false)
   })

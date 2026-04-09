@@ -274,7 +274,10 @@ function summarizeLoopPayload(payload: unknown, eventType: string): string | nul
   }
 
   if (eventType === 'LOOP_TERMINATED') {
-    return `循环终止 | ${turnText} | 原因: ${reason}`
+    if (elapsedMs === null) {
+      return `循环终止 | ${turnText} | 原因: ${reason}`
+    }
+    return `循环终止 | ${turnText} | 耗时: ${elapsedMs}ms | 原因: ${reason}`
   }
 
   return null

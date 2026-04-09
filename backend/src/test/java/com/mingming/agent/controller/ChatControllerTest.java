@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,5 +42,6 @@ class ChatControllerTest {
         Assertions.assertTrue(executeCalled.await(2, TimeUnit.SECONDS));
         verify(orchestrator).executeSingleTurn(eq(runId), eq(sessionId), eq("hello"), any());
         verify(orchestrator).startRun(eq(null), eq("dashscope"), eq(null), eq(null), eq("system.txt"));
+        verifyNoMoreInteractions(orchestrator);
     }
 }

@@ -126,6 +126,9 @@ export function aggregateLoopStatusFromTimeline(items: TimelineItem[]): LoopStat
       continue
     }
 
+    if (elapsedMs !== null) {
+      aggregated.elapsedMs = elapsedMs
+    }
     if (reason !== null) {
       aggregated.terminationReason = reason
     }
