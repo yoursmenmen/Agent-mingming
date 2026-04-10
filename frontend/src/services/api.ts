@@ -276,4 +276,22 @@ export async function fetchRagDocuments(): Promise<RagDocuments> {
   }
 }
 
+export async function postToolConfirm(
+  runId: string,
+  toolCallId: string,
+  approved: boolean,
+): Promise<void> {
+  const response = await fetch(`/api/runs/${runId}/tool-confirm`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${DEV_TOKEN}`,
+    },
+    body: JSON.stringify({ toolCallId, approved }),
+  })
+  if (!response.ok) {
+    throw new Error(`工具确认请求失败：${response.status}`)
+  }
+}
+
 export { DEV_TOKEN }

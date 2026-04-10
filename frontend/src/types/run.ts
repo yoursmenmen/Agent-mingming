@@ -119,3 +119,19 @@ export interface RunEventMetrics {
   confirm_rejected_total: number
   contract_warning_total: number
 }
+
+export interface ToolConfirmPayload {
+  type: 'TOOL_CONFIRM_REQUIRED'
+  toolCallId: string
+  toolName: string
+  args: Record<string, unknown>
+  reason: string
+}
+
+export interface PendingToolConfirm {
+  toolCallId: string
+  toolName: string
+  args: Record<string, unknown>
+  reason: string
+  runId: string
+}
