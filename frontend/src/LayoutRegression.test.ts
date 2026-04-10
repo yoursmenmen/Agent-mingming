@@ -20,9 +20,9 @@ describe('workspace layout regression', () => {
 
   it('shrinks the inspector rail and navigation buttons on desktop', () => {
     expect(styleCss).toContain('.workspace {\n  display: grid;\n  grid-template-columns: minmax(0, 1fr) 54px;')
-    expect(styleCss).toContain('.inspector-shell {\n  display: flex;\n  gap: 8px;\n  min-width: 62px;\n  width: 62px;')
-    expect(styleCss).toContain('.inspector-nav {\n  flex: 0 0 62px;')
-    expect(styleCss).toContain('.sidebar-toggle,\n.sidebar-tab {\n  width: 100%;\n  padding: 9px 7px;\n  font-size: 12px;')
+    expect(styleCss).toContain('.inspector-shell {\n  display: flex;\n  gap: 8px;\n  min-width: 54px;\n  width: 54px;')
+    expect(styleCss).toContain('.inspector-nav {\n  flex: 0 0 54px;')
+    expect(styleCss).toContain('.sidebar-toggle,\n.sidebar-tab {\n  width: 100%;\n  padding: 8px 6px;\n  font-size: 11px;')
   })
 })
 

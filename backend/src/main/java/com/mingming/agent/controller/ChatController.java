@@ -52,7 +52,7 @@ public class ChatController {
                 start.put("runId", runId.toString());
                 emitter.send(SseEmitter.event().name("run").data(start.toString()));
 
-                orchestrator.executeSingleTurn(runId, init.sessionId(), req.message(), data -> {
+                orchestrator.runOnce(runId, init.sessionId(), req.message(), (data) -> {
                     try {
                         emitter.send(SseEmitter.event().name("event").data(data));
                     } catch (IOException e) {

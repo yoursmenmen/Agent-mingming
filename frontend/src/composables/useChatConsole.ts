@@ -20,7 +20,6 @@ import { parseStructuredPayload } from '../services/structured'
 import { consumeSseStream } from '../services/sse'
 import type { ChatMessage, StreamErrorEvent, StreamMessageEvent, StreamRunEvent } from '../types/chat'
 import type {
-  LoopStatus,
   McpServerInfo,
   OnboardingPlanCard,
   PendingMcpAction,
@@ -53,89 +52,6 @@ function parseModelMessagePayload(payload: string): ModelMessagePayload | null {
   } catch {
     return null
   }
-}
-
-type LoopEventPayload = {
-  turnIndex?: unknown
-  maxTurns?: unknown
-  elapsedMs?: unknown
-  reason?: unknown
-}
-
-function parseLoopEventPayload(rawPayload: string): LoopEventPayload | null {
-  try {
-    const parsed = JSON.parse(rawPayload)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return null
-    }
-    return parsed as LoopEventPayload
-  } catch {
-    return null
-  }
-}
-
-function asFiniteNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-function asNonEmptyString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0 ? value : null
-}
-
-export function aggregateLoopStatusFromTimeline(items: TimelineItem[]): LoopStatus | null {
-  const loopItems = items.filter(
-    (item) => item.type === 'LOOP_TURN_STARTED' || item.type === 'LOOP_TURN_FINISHED' || item.type === 'LOOP_TERMINATED',
-  )
-  if (loopItems.length === 0) {
-    return null
-  }
-
-  const aggregated: LoopStatus = {
-    currentTurn: null,
-    maxTurns: null,
-    elapsedMs: null,
-    terminationReason: null,
-    active: false,
-  }
-
-  for (const item of [...loopItems].sort((a, b) => a.seq - b.seq)) {
-    const payload = parseLoopEventPayload(item.rawPayload)
-    const turn = asFiniteNumber(payload?.turnIndex)
-    const maxTurns = asFiniteNumber(payload?.maxTurns)
-    const elapsedMs = asFiniteNumber(payload?.elapsedMs)
-    const reason = asNonEmptyString(payload?.reason)
-
-    if (turn !== null) {
-      aggregated.currentTurn = turn
-    }
-    if (maxTurns !== null) {
-      aggregated.maxTurns = maxTurns
-    }
-
-    if (item.type === 'LOOP_TURN_STARTED') {
-      aggregated.active = true
-      aggregated.terminationReason = null
-      continue
-    }
-
-    if (item.type === 'LOOP_TURN_FINISHED') {
-      if (elapsedMs !== null) {
-        aggregated.elapsedMs = elapsedMs
-      }
-      aggregated.active = true
-      continue
-    }
-
-    if (elapsedMs !== null) {
-      aggregated.elapsedMs = elapsedMs
-    }
-    if (reason !== null) {
-      aggregated.terminationReason = reason
-    }
-    aggregated.active = false
-  }
-
-  return aggregated
 }
 
 export function useChatConsole() {
@@ -176,7 +92,6 @@ export function useChatConsole() {
 
   const timelineItems = computed(() => mergeTimelineItems(streamItems.value, historyItems.value))
   const timelineCount = computed(() => timelineItems.value.length)
-  const loopStatus = computed(() => aggregateLoopStatusFromTimeline(timelineItems.value))
   const timelineActionStates = computed(() => {
     const states = new Map<string, TimelineItem['actionState']>()
     for (const item of timelineItems.value) {
@@ -869,7 +784,6 @@ export function useChatConsole() {
     runStatus,
     timelineItems,
     timelineCount,
-    loopStatus,
     pendingMcpActions,
     onboardingPlanCard,
     availableTools,
