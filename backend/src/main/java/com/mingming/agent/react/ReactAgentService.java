@@ -197,7 +197,8 @@ public class ReactAgentService {
                 .map(tool -> FunctionToolCallback
                         .builder(tool.name(), (String args) -> "{}")
                         .description(tool.description())
-                        .inputSchema(tool.inputSchema())
+                        .inputType(String.class)   // builder 要求非 null；实际不会被调用（internalToolExecutionEnabled=false）
+                        .inputSchema(tool.inputSchema())  // 覆盖 schema，发给模型的是真实的工具参数结构
                         .build())
                 .collect(java.util.stream.Collectors.toList());
 
