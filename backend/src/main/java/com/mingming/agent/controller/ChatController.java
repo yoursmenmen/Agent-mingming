@@ -3,6 +3,8 @@ package com.mingming.agent.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mingming.agent.orchestrator.AgentOrchestrator;
+import com.mingming.agent.react.ReactAgentService;
+import com.mingming.agent.react.TerminationPolicy;
 import java.io.IOException;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class ChatController {
 
     private final AgentOrchestrator orchestrator;
+    private final ReactAgentService reactAgentService;
     private final ObjectMapper objectMapper;
 
     public record ChatRequest(String message, String sessionId) {}
@@ -52,13 +55,18 @@ public class ChatController {
                 start.put("runId", runId.toString());
                 emitter.send(SseEmitter.event().name("run").data(start.toString()));
 
-                orchestrator.runOnce(runId, init.sessionId(), req.message(), (data) -> {
-                    try {
-                        emitter.send(SseEmitter.event().name("event").data(data));
-                    } catch (IOException e) {
-                        // client disconnected
-                    }
-                });
+                reactAgentService.execute(
+                    runId,
+                    init.sessionId(),
+                    req.message(),
+                    TerminationPolicy.defaults(),
+                    data -> {
+                        try {
+                            emitter.send(SseEmitter.event().name("event").data(data));
+                        } catch (IOException e) {
+                            // client disconnected
+                        }
+                    });
 
                 emitter.complete();
             } catch (Exception e) {
