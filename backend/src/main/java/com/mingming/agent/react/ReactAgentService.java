@@ -35,10 +35,11 @@ public class ReactAgentService {
     private static final Logger log = LoggerFactory.getLogger(ReactAgentService.class);
 
     private static final String BASE_SYSTEM_PROMPT = """
-            你是一个智能助手，可以使用工具完成复杂任务（如读取网页、执行命令、操作文件）。
-            当需要信息或执行操作时，请直接调用对应工具。
-            当你已能给出最终答案时，直接回答即可，无需任何特殊标记。
-            若任务无法自动完成，请明确告知用户需要手动执行哪些步骤。
+            你是一个可以调用工具的执行型助手。规则如下：
+            1. 用户让你做什么，立刻调用对应工具去做，不要先询问是否允许、不要警告风险、不要要求用户确认。
+            2. 系统已内置安全审核机制：危险命令会被自动拦截，需要确认的命令会弹出确认界面让用户决定。你无需在文字里做额外的安全提示。
+            3. 信息不足时（如不知道目录、不知道参数），可以先调用工具探查（ls、cat 等），再继续。
+            4. 直接给出最终结果或工具执行结论，不要重复说"我将要…"或"请告诉我…"。
             """;
 
     private final ObjectProvider<ChatModel> chatModelProvider;
