@@ -166,7 +166,7 @@ public class AgentOrchestrator {
         appendEvent(runId, seq.getAndIncrement(), RunEventType.MODEL_MESSAGE, payload);
     }
 
-    List<Message> buildPromptMessages(UUID sessionId, String userText) {
+    public List<Message> buildPromptMessages(UUID sessionId, String userText) {
         return buildPromptMessages(sessionId, userText, List.of());
     }
 
