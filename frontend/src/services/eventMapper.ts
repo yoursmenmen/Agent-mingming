@@ -189,20 +189,36 @@ function summarizeToolCallPayload(payload: unknown): string | null {
 
   const toolPayload = payload as {
     tool?: unknown
+    // ReactAgent format: args is a JSON string
+    args?: unknown
+    // MCP legacy format: data is a nested object
     data?: Record<string, unknown>
   }
   const tool = typeof toolPayload.tool === 'string' && toolPayload.tool.trim().length > 0 ? toolPayload.tool : 'unknown'
+
+  // ReactAgent format: args is a JSON-encoded string
+  if (typeof toolPayload.args === 'string') {
+    let args: Record<string, unknown> = {}
+    try {
+      args = JSON.parse(toolPayload.args) as Record<string, unknown>
+    } catch {
+      return `工具调用 ${tool}`
+    }
+    const url = typeof args.url === 'string' ? args.url : null
+    const command = typeof args.command === 'string' ? args.command : null
+    const keys = Object.keys(args)
+    if (url) return `工具调用 ${tool} | url: ${url}`
+    if (command) return `工具调用 ${tool} | command: ${command}`
+    return `工具调用 ${tool} | 参数键: ${keys.join(', ') || '-'}`
+  }
+
+  // MCP legacy format: params nested under data
   const data = toolPayload.data && typeof toolPayload.data === 'object' ? toolPayload.data : {}
   const keys = Object.keys(data)
   const url = typeof data.url === 'string' ? data.url : null
   const command = typeof data.command === 'string' ? data.command : null
-
-  if (url) {
-    return `工具调用 ${tool} | url: ${url}`
-  }
-  if (command) {
-    return `工具调用 ${tool} | command: ${command} | 参数键: ${keys.join(', ') || '-'}`
-  }
+  if (url) return `工具调用 ${tool} | url: ${url}`
+  if (command) return `工具调用 ${tool} | command: ${command} | 参数键: ${keys.join(', ') || '-'}`
   return `工具调用 ${tool} | 参数键: ${keys.join(', ') || '-'}`
 }
 
@@ -213,9 +229,26 @@ function summarizeToolResultPayload(payload: unknown): string | null {
 
   const toolPayload = payload as {
     tool?: unknown
+    // ReactAgent format: success/output/error at top level
+    success?: unknown
+    output?: unknown
+    error?: unknown
+    // MCP legacy format: result nested under data
     data?: Record<string, unknown>
   }
   const tool = typeof toolPayload.tool === 'string' && toolPayload.tool.trim().length > 0 ? toolPayload.tool : 'unknown'
+
+  // ReactAgent format: success is a boolean at top level
+  if (typeof toolPayload.success === 'boolean') {
+    const success = toolPayload.success
+    const output = typeof toolPayload.output === 'string' ? toolPayload.output : ''
+    const error = typeof toolPayload.error === 'string' ? toolPayload.error : ''
+    if (!success) return `工具结果 ${tool} | 失败: ${error || '未知错误'}`
+    const preview = output.length > 60 ? output.substring(0, 60) + '…' : output
+    return `工具结果 ${tool} | 成功${preview ? ' | ' + preview : ''}`
+  }
+
+  // MCP legacy format: result nested under data
   const data = toolPayload.data && typeof toolPayload.data === 'object' ? toolPayload.data : {}
   const ok = typeof data.ok === 'boolean' ? data.ok : null
   const status = typeof data.status === 'string' ? data.status : ''
@@ -229,13 +262,8 @@ function summarizeToolResultPayload(payload: unknown): string | null {
   if (status === 'BLOCKED_POLICY') {
     return `工具结果 ${tool} | 已拦截: ${error || '策略阻止'}`
   }
-
-  if (ok === false) {
-    return `工具结果 ${tool} | 失败: ${error || '未知错误'}`
-  }
-  if (hasContent) {
-    return `工具结果 ${tool} | 成功 | content items: ${(data.content as unknown[]).length}`
-  }
+  if (ok === false) return `工具结果 ${tool} | 失败: ${error || '未知错误'}`
+  if (hasContent) return `工具结果 ${tool} | 成功 | content items: ${(data.content as unknown[]).length}`
   return `工具结果 ${tool} | ${ok === true ? '成功' : '已返回'}`
 }
 
