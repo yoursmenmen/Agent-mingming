@@ -22,6 +22,9 @@ import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.function.FunctionToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -172,23 +175,37 @@ public class ReactAgentService {
     }
 
     private List<Message> buildInitialMessages(UUID sessionId, String userText) {
-        // 构建工具 schema 描述注入到 system prompt
-        StringBuilder toolDesc = new StringBuilder(BASE_SYSTEM_PROMPT);
-        List<AgentTool> tools = toolDispatcher.getTools();
-        if (!tools.isEmpty()) {
-            toolDesc.append("\n\n可用工具：\n");
-            for (AgentTool tool : tools) {
-                toolDesc.append("- ").append(tool.name()).append("：").append(tool.description()).append("\n");
-                toolDesc.append("  参数 schema：").append(tool.inputSchema().trim()).append("\n");
-            }
-        }
-
         List<Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(toolDesc.toString()));
-        // 追加会话历史（不含当前用户消息，由 buildPromptMessages 处理）
-        List<Message> history = orchestrator.buildPromptMessages(sessionId, userText);
-        messages.addAll(history);
+        messages.add(new SystemMessage(BASE_SYSTEM_PROMPT));
+        messages.addAll(orchestrator.buildPromptMessages(sessionId, userText));
         return messages;
+    }
+
+    /**
+     * 将 AgentTool 列表转为 Spring AI ToolCallback，并封装进 ToolCallingChatOptions。
+     * internalToolExecutionEnabled=false：Spring AI 只声明工具，不自动执行；
+     * 执行权留在 ReactAgentService 的显式 loop 里（由 ToolDispatcher 分级处理）。
+     *
+     * 扩展性：新增工具只需实现 AgentTool 并注册 Bean，此处自动感知，无需改动。
+     */
+    private Prompt buildPromptWithTools(List<Message> messages) {
+        List<AgentTool> tools = toolDispatcher.getTools();
+        if (tools.isEmpty()) {
+            return new Prompt(messages);
+        }
+        List<ToolCallback> callbacks = tools.stream()
+                .map(tool -> FunctionToolCallback
+                        .builder(tool.name(), (String args) -> "{}")
+                        .description(tool.description())
+                        .inputSchema(tool.inputSchema())
+                        .build())
+                .collect(java.util.stream.Collectors.toList());
+
+        ToolCallingChatOptions options = ToolCallingChatOptions.builder()
+                .toolCallbacks(callbacks)
+                .internalToolExecutionEnabled(false)
+                .build();
+        return new Prompt(messages, options);
     }
 
     private ChatResponse streamAndCollect(
@@ -197,7 +214,7 @@ public class ReactAgentService {
             StringBuilder contentBuilder,
             Consumer<String> sseConsumer) {
 
-        Flux<ChatResponse> stream = chatModel.stream(new Prompt(messages));
+        Flux<ChatResponse> stream = chatModel.stream(buildPromptWithTools(messages));
         ChatResponse[] lastRef = new ChatResponse[1];
         stream.doOnNext(chunk -> {
             if (chunk == null || chunk.getResult() == null) return;
