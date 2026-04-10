@@ -18,6 +18,10 @@ public class ShellTool implements AgentTool {
             "curl --version", "docker --version",
             "uname", "hostname", "whoami", "date", "uptime");
 
+    /** 命令中若含有这些 flag，视为只读操作，自动放行（不走确认流程）。 */
+    private static final List<String> READONLY_FLAGS = List.of(
+            "--dry-run", "--list", "--list-files", "-n", "--check");
+
     private static final List<String> BLACKLIST_PATTERNS = List.of(
             "rm -rf /", "rm -rf /*", "rm -rf ~",
             "mkfs", "shutdown", "reboot", "halt", "poweroff",
@@ -56,6 +60,12 @@ public class ShellTool implements AgentTool {
         String trimmed = command.trim().toLowerCase();
         for (String prefix : WHITELIST_PREFIXES) {
             if (trimmed.equals(prefix) || trimmed.startsWith(prefix + " ") || trimmed.startsWith(prefix + "\t")) {
+                return true;
+            }
+        }
+        // 含只读 flag 的命令（如 --dry-run）视为安全，自动放行
+        for (String flag : READONLY_FLAGS) {
+            if (trimmed.contains(flag)) {
                 return true;
             }
         }
