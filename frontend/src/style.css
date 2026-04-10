@@ -1517,6 +1517,32 @@ h2 {
   font-weight: 600;
 }
 
+.tool-confirm-banner {
+  border-color: rgba(245, 158, 11, 0.5);
+  border-left-color: #f59e0b;
+  background: rgba(255, 251, 235, 0.96);
+}
+
+.tool-confirm-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.tool-confirm-name {
+  font-family: monospace;
+  font-weight: 600;
+  color: #92400e;
+  font-size: 13px;
+}
+
+.tool-confirm-reason {
+  color: #374151;
+  font-size: 12px;
+  word-break: break-all;
+}
+
 .timeline-meta {
   display: flex;
   justify-content: space-between;

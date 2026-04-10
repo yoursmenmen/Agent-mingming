@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import StructuredCardHost from './structured/StructuredCardHost.vue'
 import type { ChatMessage } from '../types/chat'
-import type { OnboardingPlanCard, PendingMcpAction, RunStatus } from '../types/run'
+import type { OnboardingPlanCard, PendingMcpAction, PendingToolConfirm, RunStatus } from '../types/run'
 import { renderMarkdown } from '../services/markdown'
 
 const props = defineProps<{
@@ -11,6 +11,7 @@ const props = defineProps<{
   runStatus: RunStatus
   errorMessage: string
   pendingMcpActions?: PendingMcpAction[]
+  pendingToolConfirms?: PendingToolConfirm[]
   onboardingPlanCard?: OnboardingPlanCard | null
   handlingActionIds?: string[]
   formatTime: (value: string) => string
@@ -21,6 +22,7 @@ const emit = defineEmits<{
   'update:draft': [value: string]
   'confirm-pending-action': [actionId: string]
   'reject-pending-action': [actionId: string]
+  'tool-confirm': [toolCallId: string, approved: boolean]
   'apply-onboarding-plan': [runInstall: boolean]
   'dismiss-onboarding-plan': []
 }>()
@@ -198,6 +200,34 @@ const handlingActionIds = computed(() => props.handlingActionIds ?? [])
                 @click="emit('reject-pending-action', action.actionId)"
               >
                 拒绝
+              </button>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="pendingToolConfirms && pendingToolConfirms.length" class="pending-actions-banner tool-confirm-banner">
+        <p><strong>🔧 工具请求确认</strong>（Agent 正在等待，未执行）</p>
+        <ul>
+          <li v-for="confirm in pendingToolConfirms" :key="confirm.toolCallId" class="pending-action-item pending-action-item--stacked">
+            <div class="tool-confirm-lines">
+              <span class="tool-confirm-name">{{ confirm.toolName }}</span>
+              <span class="tool-confirm-reason">{{ confirm.reason }}</span>
+            </div>
+            <div class="pending-action-controls">
+              <button
+                class="ghost-button"
+                type="button"
+                @click="emit('tool-confirm', confirm.toolCallId, true)"
+              >
+                允许执行
+              </button>
+              <button
+                class="ghost-button ghost-button--danger"
+                type="button"
+                @click="emit('tool-confirm', confirm.toolCallId, false)"
+              >
+                跳过
               </button>
             </div>
           </li>

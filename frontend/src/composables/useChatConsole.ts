@@ -24,6 +24,7 @@ import type {
   McpServerInfo,
   OnboardingPlanCard,
   PendingMcpAction,
+  PendingToolConfirm,
   RagDocuments,
   RagSourceInfo,
   RagSyncStatus,
@@ -93,6 +94,31 @@ export function useChatConsole() {
 
   const timelineItems = computed(() => mergeTimelineItems(streamItems.value, historyItems.value))
   const timelineCount = computed(() => timelineItems.value.length)
+  const pendingToolConfirms = computed<PendingToolConfirm[]>(() =>
+    streamItems.value
+      .filter((item) => item.type === 'TOOL_CONFIRM_REQUIRED')
+      .map((item) => {
+        try {
+          const p = JSON.parse(item.rawPayload) as {
+            toolCallId?: string
+            toolName?: string
+            args?: Record<string, unknown>
+            reason?: string
+          }
+          if (!p.toolCallId) return null
+          return {
+            toolCallId: p.toolCallId,
+            toolName: p.toolName ?? '未知工具',
+            args: p.args ?? {},
+            reason: p.reason ?? '',
+            runId: runId.value,
+          }
+        } catch {
+          return null
+        }
+      })
+      .filter((x): x is PendingToolConfirm => x !== null),
+  )
   const timelineActionStates = computed(() => {
     const states = new Map<string, TimelineItem['actionState']>()
     for (const item of timelineItems.value) {
@@ -274,7 +300,10 @@ export function useChatConsole() {
       const events = await fetchRunEvents(currentRunId)
       historyItems.value = toTimelineEvents(events)
       if (events.length > 0 && streamItems.value.length > 0) {
-        streamItems.value = streamItems.value.filter((item) => item.type === 'ERROR')
+        // Keep ERROR and pending TOOL_CONFIRM_REQUIRED items — they are not persisted to DB
+        streamItems.value = streamItems.value.filter(
+          (item) => item.type === 'ERROR' || item.type === 'TOOL_CONFIRM_REQUIRED',
+        )
       }
     } catch {
       // ignore periodic polling failures; final refresh reconciles full history
@@ -584,6 +613,10 @@ export function useChatConsole() {
   }
 
   async function handleToolConfirm(currentRunId: string, toolCallId: string, approved: boolean) {
+    // 立即从 stream 里移除，banner 消失
+    streamItems.value = streamItems.value.filter(
+      (item) => !(item.type === 'TOOL_CONFIRM_REQUIRED' && item.rawPayload.includes(toolCallId)),
+    )
     try {
       await postToolConfirm(currentRunId, toolCallId, approved)
     } catch (e) {
@@ -811,6 +844,7 @@ export function useChatConsole() {
     timelineItems,
     timelineCount,
     pendingMcpActions,
+    pendingToolConfirms,
     onboardingPlanCard,
     availableTools,
     mcpServers,
