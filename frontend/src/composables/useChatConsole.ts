@@ -11,6 +11,7 @@ import {
   fetchSessionEvents,
   fetchTools,
   postChatStream,
+  postToolConfirm,
   rejectMcpAction,
   setMcpServerEnabled,
   triggerRagSync,
@@ -362,8 +363,25 @@ export function useChatConsole() {
         }
 
         if (packet.event === 'event') {
-          const payload = JSON.parse(packet.data) as StreamMessageEvent
-          appendAssistantDelta(payload.content)
+          const raw = JSON.parse(packet.data) as Record<string, unknown>
+          // Check if this is a structured event (not a text delta)
+          if (typeof raw.type === 'string' && raw.type === 'TOOL_CONFIRM_REQUIRED') {
+            // Add as stream timeline item
+            streamItems.value.push(
+              createStreamTimelineItem({
+                id: createId('timeline-confirm'),
+                seq: streamSeq.value++,
+                type: 'TOOL_CONFIRM_REQUIRED',
+                createdAt: new Date().toISOString(),
+                payload: packet.data,
+              }),
+            )
+            return
+          }
+          const payload = raw as unknown as StreamMessageEvent
+          if (typeof payload.content === 'string' && payload.content.length > 0) {
+            appendAssistantDelta(payload.content)
+          }
           return
         }
 
@@ -563,6 +581,14 @@ export function useChatConsole() {
       }
     }
     localActionStates.value = next
+  }
+
+  async function handleToolConfirm(currentRunId: string, toolCallId: string, approved: boolean) {
+    try {
+      await postToolConfirm(currentRunId, toolCallId, approved)
+    } catch (e) {
+      console.error('工具确认失败', e)
+    }
   }
 
   async function confirmPendingMcpAction(actionId: string) {
@@ -808,6 +834,7 @@ export function useChatConsole() {
     toggleMcpServer,
     confirmPendingMcpAction,
     rejectPendingMcpAction,
+    handleToolConfirm,
     applyOnboardingPlanFromCard,
     dismissOnboardingPlanCard,
     refreshRagStatus,

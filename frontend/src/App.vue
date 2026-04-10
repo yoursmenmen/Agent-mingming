@@ -41,6 +41,7 @@ const {
   toggleMcpServer,
   confirmPendingMcpAction,
   rejectPendingMcpAction,
+  handleToolConfirm,
   applyOnboardingPlanFromCard,
   dismissOnboardingPlanCard,
   refreshRagStatus,
@@ -192,7 +193,11 @@ function openSidebarPanel(panel: InspectorPaneId) {
           </div>
 
           <div class="inspector-pane-host">
-            <component :is="activeInspectorPane.component" v-bind="activeInspectorProps" />
+            <component
+              :is="activeInspectorPane.component"
+              v-bind="activeInspectorProps"
+              @tool-confirm="(toolCallId: string, approved: boolean) => handleToolConfirm(runId, toolCallId, approved)"
+            />
           </div>
         </div>
       </aside>

@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { TimelineItem } from '../types/run'
+import ToolConfirmCard from './ToolConfirmCard.vue'
 
 const props = defineProps<{
   sessionId: string | null
   runId: string
   timelineItems: TimelineItem[]
   formatTime: (value: string) => string
+}>()
+
+const emit = defineEmits<{
+  toolConfirm: [toolCallId: string, approved: boolean]
 }>()
 
 type TimelineRound = {
@@ -125,6 +130,23 @@ function badgeLabel(item: TimelineItem): string {
   return ''
 }
 
+function parseToolCallId(rawPayload: string): string {
+  try { return (JSON.parse(rawPayload) as { toolCallId?: string }).toolCallId ?? '' }
+  catch { return '' }
+}
+function parseToolName(rawPayload: string): string {
+  try { return (JSON.parse(rawPayload) as { toolName?: string }).toolName ?? '未知工具' }
+  catch { return '未知工具' }
+}
+function parseProp(rawPayload: string, key: string): string {
+  try { return String((JSON.parse(rawPayload) as Record<string, unknown>)[key] ?? '') }
+  catch { return '' }
+}
+function parseArgs(rawPayload: string): Record<string, unknown> {
+  try { return (JSON.parse(rawPayload) as { args?: Record<string, unknown> }).args ?? {} }
+  catch { return {} }
+}
+
 function badgeTone(item: TimelineItem): 'success' | 'danger' | 'muted' {
   if (item.type === 'MCP_CONFIRM_RESULT') {
     if (item.actionState === 'CONFIRMED_EXECUTED') {
@@ -196,6 +218,15 @@ function badgeTone(item: TimelineItem): 'success' | 'danger' | 'muted' {
                   <summary>查看原始 payload</summary>
                   <pre>{{ item.rawPayload }}</pre>
                 </details>
+                <ToolConfirmCard
+                  v-if="item.type === 'TOOL_CONFIRM_REQUIRED'"
+                  :tool-call-id="parseToolCallId(item.rawPayload)"
+                  :tool-name="parseToolName(item.rawPayload)"
+                  :reason="parseProp(item.rawPayload, 'reason')"
+                  :args="parseArgs(item.rawPayload)"
+                  :run-id="props.runId"
+                  :on-confirm="(id, approved) => emit('toolConfirm', id, approved)"
+                />
               </div>
             </li>
           </ol>
