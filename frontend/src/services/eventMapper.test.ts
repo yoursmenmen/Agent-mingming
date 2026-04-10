@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapRunEventToTimelineItem } from './eventMapper'
+import { mapRunEventToTimelineItem, summarizePayload } from './eventMapper'
 
 describe('mapRunEventToTimelineItem', () => {
   it('builds retrieval summary with hit and representative doc path', () => {
@@ -161,5 +161,30 @@ describe('mapRunEventToTimelineItem', () => {
     expect(item.summary).toContain('local-ops/run_local_command')
     expect(item.summary).toContain('exitCode: 0')
     expect(item.actionState).toBe('CONFIRMED_EXECUTED')
+  })
+})
+
+describe('summarizePayload - ReAct events', () => {
+  it('summarizes TOOL_CONFIRM_REQUIRED', () => {
+    const result = summarizePayload(
+      { toolName: 'shell_exec', reason: '即将执行命令：npm install' },
+      'TOOL_CONFIRM_REQUIRED',
+    )
+    expect(result).toContain('shell_exec')
+    expect(result).toContain('npm install')
+  })
+
+  it('summarizes RUN_COMPLETED', () => {
+    const result = summarizePayload(
+      { totalTurns: 3, totalDurationMs: 4200 },
+      'RUN_COMPLETED',
+    )
+    expect(result).toContain('3')
+    expect(result).toContain('4200')
+  })
+
+  it('summarizes RUN_TERMINATED MAX_TURNS', () => {
+    const result = summarizePayload({ reason: 'MAX_TURNS', totalTurns: 10 }, 'RUN_TERMINATED')
+    expect(result).toContain('最大轮次')
   })
 })

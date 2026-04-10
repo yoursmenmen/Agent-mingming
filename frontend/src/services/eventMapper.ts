@@ -324,6 +324,45 @@ export function summarizePayload(payload: unknown, eventType?: string): string {
     }
   }
 
+  if (eventType === 'TOOL_CONFIRM_REQUIRED') {
+    const p = payload as { toolName?: unknown; reason?: unknown }
+    const toolName = typeof p.toolName === 'string' ? p.toolName : '未知工具'
+    const reason = typeof p.reason === 'string' ? p.reason : ''
+    return `⏳ 等待确认：${toolName}${reason ? ' | ' + reason : ''}`
+  }
+
+  if (eventType === 'TOOL_CONFIRM_RESPONSE') {
+    const p = payload as { approved?: unknown }
+    const approved = p.approved === true
+    return approved ? '✅ 用户已允许执行' : '⏭️ 用户跳过执行'
+  }
+
+  if (eventType === 'MODEL_OUTPUT') {
+    const p = payload as { turnIndex?: unknown; content?: unknown }
+    const turn = typeof p.turnIndex === 'number' ? p.turnIndex : '?'
+    const content = typeof p.content === 'string' ? p.content.substring(0, 80) : ''
+    return `🧠 第 ${turn} 轮推理${content ? '：' + content : ''}`
+  }
+
+  if (eventType === 'RUN_COMPLETED') {
+    const p = payload as { totalTurns?: unknown; totalDurationMs?: unknown }
+    const turns = typeof p.totalTurns === 'number' ? p.totalTurns : '?'
+    const ms = typeof p.totalDurationMs === 'number' ? p.totalDurationMs : null
+    return `✅ 运行完成 | 共 ${turns} 轮${ms !== null ? ' | 耗时 ' + ms + 'ms' : ''}`
+  }
+
+  if (eventType === 'RUN_TERMINATED') {
+    const p = payload as { reason?: unknown; totalTurns?: unknown }
+    const reason = typeof p.reason === 'string' ? p.reason : 'UNKNOWN'
+    const turns = typeof p.totalTurns === 'number' ? p.totalTurns : '?'
+    const reasonMap: Record<string, string> = {
+      MAX_TURNS: '达到最大轮次',
+      TIMEOUT: '执行超时',
+      CONSECUTIVE_ERRORS: '连续工具失败',
+    }
+    return `⚠️ 运行终止 | ${reasonMap[reason] ?? reason} | 共 ${turns} 轮`
+  }
+
   if (typeof payload === 'string') {
     return payload
   }
