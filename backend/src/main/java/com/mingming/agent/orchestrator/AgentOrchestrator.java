@@ -170,11 +170,14 @@ public class AgentOrchestrator {
         return buildPromptMessages(sessionId, userText, List.of());
     }
 
+    public List<Message> buildSessionHistoryMessages(UUID sessionId) {
+        List<Message> historyMessages = loadSessionHistoryMessages(sessionId);
+        return trimHistoryMessages(historyMessages);
+    }
+
     List<Message> buildPromptMessages(
             UUID sessionId, String userText, List<Bm25RetrieverService.RetrievalHit> retrievalHits) {
-        List<Message> historyMessages = loadSessionHistoryMessages(sessionId);
-        List<Message> trimmedHistory = trimHistoryMessages(historyMessages);
-        List<Message> promptMessages = new ArrayList<>(trimmedHistory);
+        List<Message> promptMessages = new ArrayList<>(buildSessionHistoryMessages(sessionId));
         String retrievalContext = buildRetrievalContext(retrievalHits);
         if (!retrievalContext.isBlank()) {
             promptMessages.add(new UserMessage(retrievalContext));
