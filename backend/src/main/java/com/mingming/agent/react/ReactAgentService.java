@@ -33,6 +33,7 @@ import reactor.core.publisher.Flux;
 public class ReactAgentService {
 
     private static final Logger log = LoggerFactory.getLogger(ReactAgentService.class);
+    private static final ContextWindowPolicy DEFAULT_WINDOW_POLICY = new ContextWindowPolicy(24, 14_000);
 
     private static final String BASE_SYSTEM_PROMPT = """
             你是一个可以调用工具的执行型助手。规则如下：
@@ -46,6 +47,7 @@ public class ReactAgentService {
     private final AgentOrchestrator orchestrator;
     private final ToolDispatcher toolDispatcher;
     private final ObjectMapper objectMapper;
+    private final ContextWindowManager contextWindowManager;
 
     public ReactAgentService(
             ObjectProvider<ChatModel> chatModelProvider,
@@ -56,6 +58,7 @@ public class ReactAgentService {
         this.orchestrator = orchestrator;
         this.toolDispatcher = toolDispatcher;
         this.objectMapper = objectMapper;
+        this.contextWindowManager = new ContextWindowManager(DEFAULT_WINDOW_POLICY);
     }
 
     public void execute(
@@ -167,6 +170,7 @@ public class ReactAgentService {
             messages.add(ToolResponseMessage.builder()
                     .responses(toolResponses)
                     .build());
+            contextWindowManager.trimInPlace(messages, 1);
         }
 
         // 达到最大轮次
