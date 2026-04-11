@@ -3,6 +3,7 @@ package com.mingming.agent.repository;
 import com.mingming.agent.entity.RunEventEntity;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -30,4 +31,17 @@ public interface RunEventRepository extends JpaRepository<RunEventEntity, UUID> 
                     """,
             nativeQuery = true)
     List<RunEventEntity> findRecentConversationEvents(@Param("sessionId") UUID sessionId, @Param("limit") int limit);
+
+    @Query(
+            value = """
+                    SELECT e.*
+                    FROM run_event e
+                    JOIN agent_run r ON r.id = e.run_id
+                    WHERE r.session_id = :sessionId
+                      AND e.type = 'SESSION_SUMMARY'
+                    ORDER BY e.created_at DESC, e.seq DESC
+                    LIMIT 1
+                    """,
+            nativeQuery = true)
+    Optional<RunEventEntity> findLatestSessionSummaryEvent(@Param("sessionId") UUID sessionId);
 }
