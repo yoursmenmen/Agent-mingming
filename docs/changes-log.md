@@ -394,3 +394,24 @@ Flyway migrations：
 - 新增：`SessionSummaryServiceTest`
 - 新增：`ReactAgentServiceTest`
 - 回归通过：`AgentOrchestratorTest`
+
+## 17) 2026-04-13 迭代（时间线轮次与交互修复）
+
+### 后端：Summary 轮次累计修复
+- `SESSION_SUMMARY.turnCount` 从“本次 run 轮次”修正为“会话累计轮次”。
+- `SessionSummaryService` 在刷新摘要时读取上一次摘要 `turnCount` 并累加。
+
+### 前端：时间线流式阶段会话视图修复
+- run 进行中轮询由 `fetchRunEvents(runId)` 调整为优先 `fetchSessionEvents(sessionId)`。
+- 修复“第三轮流式过程中只看到当前 run，历史轮次暂时消失”的问题。
+
+### 前端：MODEL_OUTPUT 展示修复
+- `MODEL_OUTPUT` 时间线文案改为“会话轮次 + 本次 run 推理次数”。
+- 示例：`🧠 第 2 轮对话 · 本次第 1 次推理：...`。
+
+### 前端：时间线折叠头交互增强
+- 轮次折叠头改为 sticky，滚动浏览事件时可直接在顶部折叠当前轮次。
+
+### 前端：测试补充
+- 更新 `eventMapper` 单测，覆盖 `SESSION_SUMMARY` 文案。
+- 新增 `TimelinePanel` 视图测试，覆盖 `MODEL_OUTPUT` 会话轮次展示。

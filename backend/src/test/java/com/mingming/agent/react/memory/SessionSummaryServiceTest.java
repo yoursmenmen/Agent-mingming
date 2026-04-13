@@ -57,6 +57,15 @@ class SessionSummaryServiceTest {
         UUID sessionId = UUID.randomUUID();
         AtomicInteger seq = new AtomicInteger(5);
 
+        RunEventEntity previousSummaryEvent = new RunEventEntity();
+        previousSummaryEvent.setId(UUID.randomUUID());
+        previousSummaryEvent.setRunId(UUID.randomUUID());
+        previousSummaryEvent.setSeq(4);
+        previousSummaryEvent.setCreatedAt(OffsetDateTime.now());
+        previousSummaryEvent.setType(RunEventType.SESSION_SUMMARY.name());
+        previousSummaryEvent.setPayload("{\"content\":\"更早摘要\",\"turnCount\":2}");
+        when(runEventRepository.findLatestSessionSummaryEvent(sessionId)).thenReturn(Optional.of(previousSummaryEvent));
+
         SessionSummaryService service = new SessionSummaryService(runEventRepository, orchestrator, objectMapper);
         Optional<String> summary = service.refreshSummary(
                 runId,
@@ -73,5 +82,6 @@ class SessionSummaryServiceTest {
         verify(orchestrator).appendEvent(eq(runId), eq(5), eq(RunEventType.SESSION_SUMMARY), payloadCaptor.capture());
         assertThat(payloadCaptor.getValue().path("sessionId").asText()).isEqualTo(sessionId.toString());
         assertThat(payloadCaptor.getValue().path("content").asText()).isNotBlank();
+        assertThat(payloadCaptor.getValue().path("turnCount").asInt()).isEqualTo(3);
     }
 }

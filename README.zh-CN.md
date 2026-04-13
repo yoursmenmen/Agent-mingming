@@ -15,10 +15,12 @@
 后端：
 - 健康检查：`GET /health`
 - SSE 对话：`POST /api/chat/stream`（返回 SSE 事件流）
+- ReAct Agent Loop：显式多轮工具调用循环（含终止策略）
+- 工具确认：`POST /api/runs/{runId}/tool-confirm`（高风险工具需用户确认）
 - Trace 落库：PostgreSQL + Flyway migrations
 - 查询历史事件：`GET /api/runs/{runId}/events`
 - 简单鉴权：除 `/health` 与 `/actuator/**` 外，均要求 `Authorization: Bearer <token>`
-- Skills/Tools：demo `now`、`add`（基于 `@Tool`）
+- AgentTool：`fetch_page`、`file_op`、`shell_exec`（由调度器统一执行）
 - RAG（docs）：
   - markdown 分片 + BM25 检索
   - pgvector 向量检索 + 混合召回（vector + BM25）
@@ -98,6 +100,16 @@ curl -N \
 你会看到类似事件：
 - `event: run`：包含 `runId`
 - `event: event`：包含模型输出 payload
+
+如果命中工具确认网关，可调用：
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer dev-token-change-me" \
+  -H "Content-Type: application/json" \
+  "http://localhost:18080/api/runs/<runId>/tool-confirm" \
+  -d '{"toolCallId":"<tool_call_id>","approved":true}'
+```
 
 然后可查询落库事件：
 

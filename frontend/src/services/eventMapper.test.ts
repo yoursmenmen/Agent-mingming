@@ -165,6 +165,16 @@ describe('mapRunEventToTimelineItem', () => {
 })
 
 describe('summarizePayload - ReAct events', () => {
+  it('summarizes SESSION_SUMMARY with refreshed label', () => {
+    const result = summarizePayload(
+      { turnCount: 3, content: '已完成上下文压缩并保留关键约束' },
+      'SESSION_SUMMARY',
+    )
+    expect(result).toContain('会话摘要已刷新')
+    expect(result).toContain('3 轮')
+    expect(result).toContain('已完成上下文压缩')
+  })
+
   it('summarizes TOOL_CONFIRM_REQUIRED', () => {
     const result = summarizePayload(
       { toolName: 'shell_exec', reason: '即将执行命令：npm install' },

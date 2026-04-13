@@ -74,10 +74,13 @@ public class SessionSummaryService {
             return Optional.ofNullable(previousSummary).filter(s -> !s.isBlank());
         }
 
+        int previousTurnCount = loadPreviousTurnCount(sessionId);
+        int totalTurnCount = previousTurnCount + recentTurns.size();
+
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("sessionId", sessionId.toString());
         payload.put("sourceRunId", runId.toString());
-        payload.put("turnCount", recentTurns.size());
+        payload.put("turnCount", totalTurnCount);
         payload.put("content", nextSummary);
 
         orchestrator.appendEvent(runId, seqCounter.getAndIncrement(), RunEventType.SESSION_SUMMARY, payload);
@@ -154,6 +157,24 @@ public class SessionSummaryService {
             return objectMapper.readTree(payloadJson).path("content").asText("");
         } catch (Exception ex) {
             return "";
+        }
+    }
+
+    private int loadPreviousTurnCount(UUID sessionId) {
+        return runEventRepository.findLatestSessionSummaryEvent(sessionId)
+                .map(RunEventEntity::getPayload)
+                .map(this::extractTurnCount)
+                .orElse(0);
+    }
+
+    private int extractTurnCount(String payloadJson) {
+        if (payloadJson == null || payloadJson.isBlank()) {
+            return 0;
+        }
+        try {
+            return Math.max(0, objectMapper.readTree(payloadJson).path("turnCount").asInt(0));
+        } catch (Exception ex) {
+            return 0;
         }
     }
 }
