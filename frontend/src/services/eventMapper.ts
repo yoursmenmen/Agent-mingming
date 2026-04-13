@@ -372,6 +372,14 @@ export function summarizePayload(payload: unknown, eventType?: string): string {
     return `🧠 第 ${turn} 轮推理${content ? '：' + content : ''}`
   }
 
+  if (eventType === 'SESSION_SUMMARY') {
+    const p = payload as { turnCount?: unknown; content?: unknown }
+    const turnCount = typeof p.turnCount === 'number' ? p.turnCount : null
+    const content = typeof p.content === 'string' ? p.content.substring(0, 80) : ''
+    const countText = turnCount !== null ? `（基于 ${turnCount} 轮）` : ''
+    return `🧠 会话摘要已刷新${countText}${content ? '：' + content : ''}`
+  }
+
   if (eventType === 'RUN_COMPLETED') {
     const p = payload as { totalTurns?: unknown; totalDurationMs?: unknown }
     const turns = typeof p.totalTurns === 'number' ? p.totalTurns : '?'

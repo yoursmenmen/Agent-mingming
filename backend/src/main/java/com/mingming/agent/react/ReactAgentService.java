@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mingming.agent.event.RunEventType;
 import com.mingming.agent.orchestrator.AgentOrchestrator;
+import com.mingming.agent.react.memory.SessionSummaryService;
 import com.mingming.agent.react.tool.AgentTool;
 import com.mingming.agent.react.tool.ToolDispatcher;
 import com.mingming.agent.react.tool.ToolResult;
@@ -19,6 +20,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
@@ -33,6 +35,7 @@ import reactor.core.publisher.Flux;
 public class ReactAgentService {
 
     private static final Logger log = LoggerFactory.getLogger(ReactAgentService.class);
+    private static final ContextWindowPolicy DEFAULT_WINDOW_POLICY = new ContextWindowPolicy(24, 14_000);
 
     private static final String BASE_SYSTEM_PROMPT = """
             你是一个可以调用工具的执行型助手。规则如下：
@@ -46,16 +49,21 @@ public class ReactAgentService {
     private final AgentOrchestrator orchestrator;
     private final ToolDispatcher toolDispatcher;
     private final ObjectMapper objectMapper;
+    private final ContextWindowManager contextWindowManager;
+    private final SessionSummaryService summaryService;
 
     public ReactAgentService(
             ObjectProvider<ChatModel> chatModelProvider,
             AgentOrchestrator orchestrator,
             ToolDispatcher toolDispatcher,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            SessionSummaryService summaryService) {
         this.chatModelProvider = chatModelProvider;
         this.orchestrator = orchestrator;
         this.toolDispatcher = toolDispatcher;
         this.objectMapper = objectMapper;
+        this.contextWindowManager = new ContextWindowManager(DEFAULT_WINDOW_POLICY);
+        this.summaryService = summaryService;
     }
 
     public void execute(
@@ -68,12 +76,15 @@ public class ReactAgentService {
         AtomicInteger seq = new AtomicInteger(1);
         long startedAt = System.currentTimeMillis();
         int consecutiveErrors = 0;
+        String currentSummary = summaryService.loadLatestSummary(sessionId).orElse("");
+        List<SessionSummaryService.ConversationTurn> summaryTurns = new ArrayList<>();
 
         // 记录用户消息事件
         appendEvent(runId, seq, RunEventType.USER_MESSAGE, Map.of("content", userText));
 
         // 构建初始消息（含工具 schema 的 system message）
-        List<Message> messages = buildInitialMessages(sessionId, userText);
+        List<Message> messages = buildInitialMessages(sessionId, userText, currentSummary);
+        int fixedPrefixCount = currentSummary.isBlank() ? 1 : 2;
 
         ChatModel chatModel = chatModelProvider.getIfAvailable();
         if (chatModel == null) {
@@ -86,6 +97,7 @@ public class ReactAgentService {
 
         for (int turn = 1; turn <= policy.maxTurns(); turn++) {
             if (System.currentTimeMillis() - startedAt > policy.maxDurationMs()) {
+                currentSummary = refreshSummary(runId, sessionId, currentSummary, summaryTurns, chatModel, seq);
                 appendEvent(runId, seq, RunEventType.RUN_TERMINATED,
                         Map.of("reason", "TIMEOUT", "totalTurns", turn - 1));
                 sseConsumer.accept(jsonContent("执行超时（" + policy.maxDurationMs() / 1000 + "秒），共完成 " + (turn - 1) + " 轮。"));
@@ -112,6 +124,9 @@ public class ReactAgentService {
             consecutiveErrors = 0;
 
             String assistantText = contentBuilder.toString();
+            summaryTurns.add(new SessionSummaryService.ConversationTurn(
+                    turn == 1 ? userText : "[工具反馈回合-" + turn + "]",
+                    assistantText));
 
             // 落库本轮 LLM 输出
             appendEvent(runId, seq, RunEventType.MODEL_OUTPUT,
@@ -123,6 +138,7 @@ public class ReactAgentService {
             // 没有工具调用 → 最终答案
             if (toolCalls == null || toolCalls.isEmpty()) {
                 appendEvent(runId, seq, RunEventType.MODEL_MESSAGE, Map.of("content", assistantText));
+                refreshSummary(runId, sessionId, currentSummary, summaryTurns, chatModel, seq);
                 appendEvent(runId, seq, RunEventType.RUN_COMPLETED,
                         Map.of("totalTurns", turn,
                                 "totalDurationMs", System.currentTimeMillis() - startedAt));
@@ -167,19 +183,47 @@ public class ReactAgentService {
             messages.add(ToolResponseMessage.builder()
                     .responses(toolResponses)
                     .build());
+            contextWindowManager.trimInPlace(messages, fixedPrefixCount);
         }
 
         // 达到最大轮次
+        refreshSummary(runId, sessionId, currentSummary, summaryTurns, chatModel, seq);
         appendEvent(runId, seq, RunEventType.RUN_TERMINATED,
                 Map.of("reason", "MAX_TURNS", "totalTurns", policy.maxTurns()));
         sseConsumer.accept(jsonContent("已达到最大轮次（" + policy.maxTurns() + " 轮），请缩小问题范围后重试。"));
     }
 
-    private List<Message> buildInitialMessages(UUID sessionId, String userText) {
+    List<Message> buildInitialMessages(UUID sessionId, String userText) {
+        String latestSummary = summaryService.loadLatestSummary(sessionId).orElse("");
+        return buildInitialMessages(sessionId, userText, latestSummary);
+    }
+
+    private List<Message> buildInitialMessages(UUID sessionId, String userText, String summaryText) {
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(BASE_SYSTEM_PROMPT));
-        messages.addAll(orchestrator.buildPromptMessages(sessionId, userText));
+        if (summaryText != null && !summaryText.isBlank()) {
+            messages.add(new SystemMessage("会话摘要记忆：\n" + summaryText));
+        }
+        messages.addAll(orchestrator.buildSessionHistoryMessages(sessionId));
+        messages.add(new UserMessage(userText));
         return messages;
+    }
+
+    private String refreshSummary(
+            UUID runId,
+            UUID sessionId,
+            String previousSummary,
+            List<SessionSummaryService.ConversationTurn> summaryTurns,
+            ChatModel chatModel,
+            AtomicInteger seq) {
+        return summaryService.refreshSummary(
+                        runId,
+                        sessionId,
+                        previousSummary,
+                        summaryTurns,
+                        chatModel,
+                        seq)
+                .orElse(previousSummary == null ? "" : previousSummary);
     }
 
     /**

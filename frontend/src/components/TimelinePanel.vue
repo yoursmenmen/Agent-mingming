@@ -161,6 +161,23 @@ function badgeTone(item: TimelineItem): 'success' | 'danger' | 'muted' {
   }
   return 'muted'
 }
+
+function displayItemSummary(item: TimelineItem, round: TimelineRound): string {
+  if (item.type !== 'MODEL_OUTPUT' || round.isSystem) {
+    return item.summary
+  }
+
+  try {
+    const parsed = JSON.parse(item.rawPayload) as { turnIndex?: unknown; content?: unknown }
+    const runTurn = typeof parsed.turnIndex === 'number' ? parsed.turnIndex : null
+    const content = typeof parsed.content === 'string' ? parsed.content.trim() : ''
+    const contentPreview = content.length > 80 ? `${content.slice(0, 80)}...` : content
+    const runTurnText = runTurn !== null ? ` · 本次第 ${runTurn} 次推理` : ''
+    return `🧠 第 ${round.turnNumber} 轮对话${runTurnText}${contentPreview ? `：${contentPreview}` : ''}`
+  } catch {
+    return `🧠 第 ${round.turnNumber} 轮对话`
+  }
+}
 </script>
 
 <template>
@@ -213,7 +230,7 @@ function badgeTone(item: TimelineItem): 'success' | 'danger' | 'muted' {
                     <span>{{ props.formatTime(item.createdAt) }}</span>
                   </div>
                 </div>
-                <p>{{ item.summary }}</p>
+                <p>{{ displayItemSummary(item, round) }}</p>
                 <details>
                   <summary>查看原始 payload</summary>
                   <pre>{{ item.rawPayload }}</pre>

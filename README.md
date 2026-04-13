@@ -9,10 +9,12 @@ Monorepo for an AI Agent system using **Spring Boot + Spring AI Alibaba (DashSco
 Backend:
 - **Health**: `GET /health`
 - **SSE chat**: `POST /api/chat/stream` returns SSE events
+- **ReAct agent loop**: explicit multi-turn tool loop with termination policy
+- **Tool confirmation**: `POST /api/runs/{runId}/tool-confirm` for risky tool calls
 - **Run trace persistence**: PostgreSQL + Flyway migrations
 - **Run events query**: `GET /api/runs/{runId}/events`
 - **Simple auth**: `Authorization: Bearer <token>` (except `/health` and `/actuator/**`)
-- **Skills** (tools): demo `now`, `add` via `@Tool`
+- **Agent tools**: `fetch_page`, `file_op`, `shell_exec` via dispatcher
 - **RAG (docs)**:
   - markdown chunking + BM25 retrieval
   - pgvector vector retrieval + hybrid fusion (vector + BM25)
@@ -95,6 +97,16 @@ curl -N \
 You should see events like:
 - `event: run` with a `runId`
 - `event: event` with model output payload
+
+If tool confirmation is required, call:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer dev-token-change-me" \
+  -H "Content-Type: application/json" \
+  "http://localhost:18080/api/runs/<runId>/tool-confirm" \
+  -d '{"toolCallId":"<tool_call_id>","approved":true}'
+```
 
 Then query stored events:
 

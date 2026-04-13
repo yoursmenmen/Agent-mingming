@@ -297,7 +297,9 @@ export function useChatConsole() {
 
     runEventsPollingActive.value = true
     try {
-      const events = await fetchRunEvents(currentRunId)
+      const events = sessionId.value
+        ? await fetchSessionEvents(sessionId.value)
+        : await fetchRunEvents(currentRunId)
       historyItems.value = toTimelineEvents(events)
       if (events.length > 0 && streamItems.value.length > 0) {
         // Keep ERROR and pending TOOL_CONFIRM_REQUIRED items — they are not persisted to DB

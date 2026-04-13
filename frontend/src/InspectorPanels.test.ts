@@ -120,4 +120,55 @@ describe('Inspector pane layout', () => {
     expect(chips[1].text()).toContain('未启用')
     expect(chips[1].classes()).toContain('rag-source-meta--disabled')
   })
+
+  it('shows session-level round number for MODEL_OUTPUT summary', () => {
+    const timeline = mount(TimelinePanel, {
+      props: {
+        sessionId: 'session-1',
+        runId: 'run-2',
+        formatTime: (value: string) => value,
+        timelineItems: [
+          {
+            id: 'u1',
+            seq: 1,
+            createdAt: '2026-04-13T10:00:00Z',
+            type: 'USER_MESSAGE',
+            summary: '第一轮问题',
+            rawPayload: JSON.stringify({ content: '第一轮问题' }),
+            source: 'history',
+          },
+          {
+            id: 'm1',
+            seq: 2,
+            createdAt: '2026-04-13T10:00:01Z',
+            type: 'MODEL_OUTPUT',
+            summary: '🧠 第 1 轮推理：第一轮回答',
+            rawPayload: JSON.stringify({ turnIndex: 1, content: '第一轮回答' }),
+            source: 'history',
+          },
+          {
+            id: 'u2',
+            seq: 3,
+            createdAt: '2026-04-13T10:05:00Z',
+            type: 'USER_MESSAGE',
+            summary: '第二轮问题',
+            rawPayload: JSON.stringify({ content: '第二轮问题' }),
+            source: 'history',
+          },
+          {
+            id: 'm2',
+            seq: 4,
+            createdAt: '2026-04-13T10:05:01Z',
+            type: 'MODEL_OUTPUT',
+            summary: '🧠 第 1 轮推理：第二轮回答',
+            rawPayload: JSON.stringify({ turnIndex: 1, content: '第二轮回答' }),
+            source: 'history',
+          },
+        ],
+      },
+    })
+
+    const text = timeline.text()
+    expect(text).toContain('第 2 轮对话 · 本次第 1 次推理：第二轮回答')
+  })
 })

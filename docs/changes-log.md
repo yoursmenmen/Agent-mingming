@@ -343,3 +343,75 @@ Flyway migrations：
 ### 文档同步
 - 更新：`docs/config-reference.md`、`docs/mcp-local-ops-guide.md`、`docs/README.md`
 - 新增：`docs/progress-status.md`（当前阶段快照与已知问题/下一步）
+
+## 15) 2026-04-11 迭代（ReAct Agent Loop 完成 + 文档对齐）
+
+### 后端：显式 ReAct Loop 主链路落地
+- `ChatController` 已将聊天入口切换到 `ReactAgentService.execute(...)`，在同一次 run 内进行“模型输出 -> 工具调用 -> 工具结果回填 -> 下一轮”循环。
+- `ReactAgentService` 增加终止策略保护：
+  - `maxTurns`
+  - `maxDurationMs`
+  - `maxConsecutiveErrors`
+- `ToolDispatcher` 负责统一执行 AgentTool：工具路由、参数解析、确认网关、异常兜底。
+
+### 后端：AgentTool 与确认网关
+- 当前 AgentTool 集合：`fetch_page`、`file_op`、`shell_exec`（通过 `AgentToolConfig` 注册）。
+- 高风险动作确认入口：`POST /api/runs/{runId}/tool-confirm`。
+- 工具执行结果继续落库为 `TOOL_CALL/TOOL_RESULT`，可在时间线回放。
+
+### 文档同步（本次）
+- 更新 `README.md`：补充 ReAct loop、AgentTool、tool-confirm 使用示例。
+- 更新 `README.zh-CN.md`：补充 ReAct loop、AgentTool、tool-confirm 使用示例。
+- 更新 `docs/project-overview.md`：将阶段描述改为“Agent Loop 已落地”，并补充下一阶段 Summary Memory 规划。
+- 更新 `docs/progress-status.md`：重写为 2026-04-11 现状快照，明确“会话窗口已做、摘要记忆未做”的上下文管理现状。
+
+## 16) 2026-04-11 迭代（Summary Memory + Prompt 组装升级）
+
+### 上下文治理：运行时滑动窗口
+- 新增 `ContextWindowPolicy` 与 `ContextWindowManager`。
+- `ReactAgentService` 在每轮工具回填后执行窗口裁剪，控制消息数量与字符预算。
+- 保留 system/summary 前缀，仅滑动裁剪后续消息窗口。
+
+### 会话记忆：可持久化 SESSION_SUMMARY
+- `RunEventType` 新增 `SESSION_SUMMARY`。
+- `RunEventRepository` 新增 `findLatestSessionSummaryEvent(sessionId)`，按会话获取最新摘要。
+- 新增 `SessionSummaryService`：
+  - 读取会话最新摘要
+  - 在 run 结束时基于旧摘要 + 新对话片段生成新摘要
+  - 落库摘要事件并写入 `sessionId/sourceRunId/turnCount/content`
+
+### Prompt 组装策略升级
+- `AgentOrchestrator` 新增 `buildSessionHistoryMessages(sessionId)`（仅历史，不拼当前 user）。
+- `ReactAgentService` 初始 prompt 改为：
+  - `BASE_SYSTEM_PROMPT`
+  - 可选 summary system message
+  - recent history window
+  - current UserMessage
+- 这使 ReAct 主链路对齐策略：`system + summary + recent window + 当前问题`。
+
+### 测试补充
+- 新增：`ContextWindowManagerTest`
+- 新增：`SessionSummaryServiceTest`
+- 新增：`ReactAgentServiceTest`
+- 回归通过：`AgentOrchestratorTest`
+
+## 17) 2026-04-13 迭代（时间线轮次与交互修复）
+
+### 后端：Summary 轮次累计修复
+- `SESSION_SUMMARY.turnCount` 从“本次 run 轮次”修正为“会话累计轮次”。
+- `SessionSummaryService` 在刷新摘要时读取上一次摘要 `turnCount` 并累加。
+
+### 前端：时间线流式阶段会话视图修复
+- run 进行中轮询由 `fetchRunEvents(runId)` 调整为优先 `fetchSessionEvents(sessionId)`。
+- 修复“第三轮流式过程中只看到当前 run，历史轮次暂时消失”的问题。
+
+### 前端：MODEL_OUTPUT 展示修复
+- `MODEL_OUTPUT` 时间线文案改为“会话轮次 + 本次 run 推理次数”。
+- 示例：`🧠 第 2 轮对话 · 本次第 1 次推理：...`。
+
+### 前端：时间线折叠头交互增强
+- 轮次折叠头改为 sticky，滚动浏览事件时可直接在顶部折叠当前轮次。
+
+### 前端：测试补充
+- 更新 `eventMapper` 单测，覆盖 `SESSION_SUMMARY` 文案。
+- 新增 `TimelinePanel` 视图测试，覆盖 `MODEL_OUTPUT` 会话轮次展示。

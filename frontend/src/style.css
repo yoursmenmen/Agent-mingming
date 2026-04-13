@@ -1362,6 +1362,10 @@ h2 {
   background: rgba(255, 255, 255, 0.92);
   color: var(--text-main);
   text-align: left;
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  backdrop-filter: blur(4px);
 }
 
 .timeline-round-header:hover {
